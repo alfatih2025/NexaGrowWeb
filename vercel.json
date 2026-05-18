@@ -1,0 +1,12 @@
+{
+  "env": {
+    "NEXT_PUBLIC_SUPABASE_URL": "https://nuvieslgxyyhhrglibjx.supabase.co",
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_...",
+    "VITE_SUPABASE_URL": "https://nuvieslgxyyhhrglibjx.supabase.co",
+    "VITE_SUPABASE_ANON_KEY": "sb_publishable_...",
+    "VITE_GOOGLE_CLIENT_ID": "...",
+    "VITE_GOOGLE_AUTH_PROXY": "...",
+    "FULLSTACK_PROJECT_REF": "nuvieslgxyyhhrglibjx",
+    "FULLSTACK_RESTORE_API_URL": "https://designarena.ai/api/fullstack-restore"
+  }
+}

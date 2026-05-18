@@ -1,0 +1,117 @@
+import { Info, Cpu, Radar, Bell, Zap, BookOpen, Activity } from 'lucide-react';
+
+function Feature({
+  title,
+  description,
+  icon: Icon,
+}: {
+  title: string;
+  description: string;
+  icon: typeof Info;
+}) {
+  return (
+    <div className="flex items-start gap-3 rounded-2xl bg-white/60 backdrop-blur border border-emerald-100 p-4 shadow-sm">
+      <div className="mt-1 rounded-xl bg-emerald-600/10 border border-emerald-600/20 p-2">
+        <Icon size={18} className="text-emerald-700" />
+      </div>
+      <div>
+        <h3 className="font-semibold text-gray-900">{title}</h3>
+        <p className="text-sm text-gray-700 leading-relaxed">{description}</p>
+      </div>
+    </div>
+  );
+}
+
+export function AboutPage() {
+  return (
+    <div className="space-y-6">
+      <div className="rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-700 p-6 text-white shadow-lg">
+        <div className="flex items-start gap-4">
+          <div className="mt-1 rounded-2xl bg-white/15 border border-white/20 p-3">
+            <Info size={22} />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold">About / Tentang Web IoT NexaGrow</h1>
+            <p className="text-emerald-100 mt-2 max-w-3xl">
+              NexaGrow adalah platform monitoring tanaman berbasis IoT yang membantu petani menjaga kondisi pertumbuhan lebih konsisten melalui
+              data sensor, kontrol perangkat, dan dukungan analitik.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="rounded-2xl bg-white/70 backdrop-blur border border-emerald-100 p-6 shadow-sm">
+          <h2 className="text-xl font-bold text-gray-900">Arti “NexaGrow”</h2>
+          <p className="text-sm text-gray-700 leading-relaxed mt-3">
+            <span className="font-semibold">Nexa</span> menggambarkan konektivitas dan kecerdasan berbasis data,
+            sedangkan <span className="font-semibold">Grow</span> merepresentasikan tujuan utama: membantu tanaman tumbuh optimal.
+            Gabungan keduanya menjadikan NexaGrow sebagai “otak” digital untuk pertumbuhan tanaman yang terukur dan lebih efisien.
+          </p>
+
+          <div className="mt-5 flex flex-wrap gap-2">
+            <span className="px-3 py-1 rounded-full bg-emerald-600/10 border border-emerald-600/20 text-emerald-800 text-sm font-medium">
+              IoT Monitoring
+            </span>
+            <span className="px-3 py-1 rounded-full bg-emerald-600/10 border border-emerald-600/20 text-emerald-800 text-sm font-medium">
+              Kontrol Otomatis
+            </span>
+            <span className="px-3 py-1 rounded-full bg-emerald-600/10 border border-emerald-600/20 text-emerald-800 text-sm font-medium">
+              Efisiensi Air
+            </span>
+          </div>
+        </div>
+
+        <div className="rounded-2xl bg-white/70 backdrop-blur border border-emerald-100 p-6 shadow-sm">
+          <h2 className="text-xl font-bold text-gray-900">Fitur Utama</h2>
+          <p className="text-sm text-gray-700 leading-relaxed mt-3">
+            Web NexaGrow dirancang untuk memberi visibilitas real-time, tindakan cepat, dan panduan berbasis AI agar keputusan perawatan
+            tanaman lebih tepat.
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <Feature
+          title="Monitoring Real-time"
+          description="Lihat pembacaan sensor (suhu, kelembapan udara, kelembapan tanah, status pompa/lampu) secara berkala dari perangkat ESP32."
+          icon={Activity}
+        />
+        <Feature
+          title="Kontrol Perangkat"
+          description="Aktifkan atau nonaktifkan perangkat (mis. pompa/lampu) melalui panel kontrol sesuai kebutuhan."
+          icon={Zap}
+        />
+        <Feature
+          title="Alert & Notifikasi"
+          description="Sistem akan memberi peringatan saat nilai melewati ambang batas (mis. suhu tinggi atau kelembapan tanah rendah)."
+          icon={Bell}
+        />
+        <Feature
+          title="Log & Analitik"
+          description="Pantau histori dan analisa perubahan data untuk membantu evaluasi perawatan tanaman."
+          icon={BookOpen}
+        />
+        <Feature
+          title="AI Chat (NexaBot)"
+          description="Gunakan AI untuk mendapatkan saran perawatan dan penjelasan berdasarkan data sensor dan konteks tanaman."
+          icon={Radar}
+        />
+        <Feature
+          title="Integrasi MQTT/ESP32"
+          description="Komunikasi perangkat IoT menggunakan MQTT agar data sensor tersalurkan ke web dengan cepat dan andal."
+          icon={Cpu}
+        />
+      </div>
+
+      <div className="rounded-2xl bg-white/70 backdrop-blur border border-emerald-100 p-6 shadow-sm">
+        <h2 className="text-xl font-bold text-gray-900">Catatan</h2>
+        <p className="text-sm text-gray-700 leading-relaxed mt-3">
+          Informasi di halaman ini bersifat deskriptif. Implementasi fitur mengikuti konfigurasi perangkat dan pengaturan ambang batas yang
+          tersimpan pada sistem.
+        </p>
+      </div>
+    </div>
+  );
+}
+
