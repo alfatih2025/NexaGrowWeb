@@ -6,24 +6,31 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
+vite-dev.log
+vite-dev-5500.log
 
-node_modules
-dist
-dist-ssr
+# Dependencies / build
+node_modules/
+dist/
+dist-ssr/
 *.local
+
+# Environment files
+.env
+.env.*
+!.env.example
 
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
-.idea
+.idea/
 .DS_Store
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
+
+# Vite / misc
 .vite-source-tags.js
-.vercel
-node_modules
-dist
-vite-dev.log vite-dev-5500.log
+.vercel/

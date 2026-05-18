@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   checkOpenRouterConnection,
-  sendMessageToOpenRouter,
   type OpenRouterStatus,
   type OpenRouterChatMessage,
 } from '../services/openrouter';
@@ -23,7 +22,7 @@ function readLocalMessages(): ChatMessage[] {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    return Array.isArray(parsed) ? (parsed as ChatMessage[]) : [];
   } catch {
     return [];
   }
@@ -40,7 +39,7 @@ function createMessage(role: 'user' | 'assistant', content: string): ChatMessage
 }
 
 async function fetchApiMessages(): Promise<ChatMessage[]> {
-  const response = await fetch('/api/chat');
+  const response = await fetch('/api/chat?limit=50');
   if (!response.ok) {
     throw new Error(`Chat API tidak merespons (${response.status})`);
   }
@@ -111,21 +110,34 @@ export function useChat() {
       persistMessages(optimisticMessages);
 
       try {
-        const assistantReply = await sendMessageToOpenRouter(
-          trimmedMessage,
-          toOpenRouterHistory(optimisticMessages),
-        );
+        const response = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: trimmedMessage,
+            user_id: 'user_001',
+            history: toOpenRouterHistory(optimisticMessages.slice(-8)),
+          }),
+        });
 
-        const assistantMessage = createMessage(
-          'assistant',
-          typeof assistantReply === 'string' ? assistantReply : 'Maaf, jawaban AI kosong.',
-        );
+        const payload = await response.json().catch(() => null);
+        if (!response.ok) {
+          throw new Error(payload?.error || `Chat API gagal (${response.status})`);
+        }
 
+        const assistantReply =
+          payload?.reply ||
+          payload?.content ||
+          payload?.assistant_message?.content ||
+          'Maaf, jawaban AI kosong.';
+
+        const assistantMessage = createMessage('assistant', assistantReply);
         persistMessages([...optimisticMessages, assistantMessage]);
+
         setConnectionStatus({
           state: 'connected',
-          label: 'OpenRouter aktif via API',
-          detail: 'Respons AI diterima dari endpoint /api/openrouter-chat.',
+          label: 'OpenRouter aktif via backend',
+          detail: 'Respons AI diterima dari endpoint /api/chat.',
           checkedAt: new Date().toISOString(),
         });
       } catch (err) {
