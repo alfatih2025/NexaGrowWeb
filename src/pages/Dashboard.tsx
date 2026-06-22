@@ -65,7 +65,7 @@ export function Dashboard({ sensorData, settings, weatherData }: DashboardProps)
         <div className="flex items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold mb-2">Selamat Datang di NexaGrow!</h1>
-            <p className="text-emerald-100">Platform monitoring tanaman dengan AI, fase tanaman, dan pengingat cerdas berbasis sensor.</p>
+            <p className="text-emerald-100">Platform smart agriculture berbasis IoT yang diperkuat AI untuk monitoring, analisis, dan otomatisasi pertanian secara real-time.</p>
           </div>
           <div className="hidden sm:flex h-16 w-16 items-center justify-center rounded-2xl bg-white/20">
             <Sprout size={36} className="text-white" />

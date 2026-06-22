@@ -166,7 +166,7 @@ export function ChatInterface({ sensorData = null, settings = null }: ChatInterf
             </div>
             <h4 className="text-lg font-semibold text-gray-700 mb-2">Selamat datang di NexaBot!</h4>
             <p className="text-gray-500 max-w-md mx-auto mb-6">
-              Saya siap membantu memantau tanaman dan memberikan saran yang menyesuaikan fase vegetatif atau generatif, termasuk saat kamu memberi skenario prompt sendiri.
+              Saya siap membantu memantau tanaman dan memberikan saran yang menyesuaikan fase vegetatif atau generatif, anda juga bebas memberikan pertanyaan apapun.
             </p>
             <div className="flex flex-wrap justify-center gap-2">
               {quickPrompts.map((prompt, idx) => (
