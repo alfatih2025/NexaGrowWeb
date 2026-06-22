@@ -15,6 +15,7 @@ function getExpectedToken() {
 function extractProvidedToken(req) {
   const headers = req?.headers || {};
   const authHeader = headers.authorization || headers.Authorization || '';
+
   if (typeof authHeader === 'string' && authHeader.toLowerCase().startsWith('bearer ')) {
     return authHeader.slice(7).trim();
   }
@@ -27,13 +28,17 @@ function extractProvidedToken(req) {
   return '';
 }
 
+export function authError(res, message = 'Unauthorized') {
+  return res.status(401).json({ error: message });
+}
+
 export function requireApiAuth(req, res, { allowAnonymous = false } = {}) {
   const expectedToken = getExpectedToken();
   if (!expectedToken || allowAnonymous) return true;
 
   const providedToken = extractProvidedToken(req);
   if (!providedToken || providedToken !== expectedToken) {
-    res.status(401).json({ error: 'Unauthorized' });
+    authError(res);
     return false;
   }
 

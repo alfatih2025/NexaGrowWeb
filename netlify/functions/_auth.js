@@ -12,9 +12,10 @@ function getExpectedToken() {
   return readEnv('API_AUTH_TOKEN', 'VITE_API_AUTH_TOKEN', 'NEXT_PUBLIC_API_AUTH_TOKEN');
 }
 
-function extractProvidedToken(event) {
-  const headers = event?.headers || {};
+function extractProvidedToken(req) {
+  const headers = req?.headers || {};
   const authHeader = headers.authorization || headers.Authorization || '';
+
   if (typeof authHeader === 'string' && authHeader.toLowerCase().startsWith('bearer ')) {
     return authHeader.slice(7).trim();
   }
@@ -27,20 +28,28 @@ function extractProvidedToken(event) {
   return '';
 }
 
-export function requireApiAuth(event, allowAnonymous = false) {
-  const expectedToken = getExpectedToken();
-  if (!expectedToken || allowAnonymous) return true;
-  const providedToken = extractProvidedToken(event);
-  return Boolean(providedToken && providedToken === expectedToken);
+export function authError(res, message = 'Unauthorized') {
+  return res.status(401).json({ error: message });
 }
 
-export function authError() {
+export function requireApiAuth(req, res, { allowAnonymous = false } = {}) {
+  const expectedToken = getExpectedToken();
+  if (!expectedToken || allowAnonymous) return true;
+
+  const providedToken = extractProvidedToken(req);
+  if (!providedToken || providedToken !== expectedToken) {
+    authError(res);
+    return false;
+  }
+
+  return true;
+}
+
+export function getAuthHeaders() {
+  const token = getExpectedToken();
+  if (!token) return {};
   return {
-    statusCode: 401,
-    headers: {
-      'Content-Type': 'application/json; charset=utf-8',
-      'Cache-Control': 'no-store',
-    },
-    body: JSON.stringify({ error: 'Unauthorized' }),
+    Authorization: `Bearer ${token}`,
+    'x-api-key': token,
   };
 }

@@ -1,4 +1,4 @@
-import { requireApiAuth, authError } from './_auth.js';
+import { requireApiAuth } from './_auth.js';
 import { getOpenRouterStatus } from './_openrouter.js';
 
 export default async function handler(req, res) {

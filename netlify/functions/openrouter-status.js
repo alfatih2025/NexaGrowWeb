@@ -1,27 +1,16 @@
-import { requireApiAuth, authError } from './_auth.js';
+import { requireApiAuth } from './_auth.js';
 import { getOpenRouterStatus } from './_openrouter.js';
 
-function json(statusCode, body) {
-  return {
-    statusCode,
-    headers: {
-      'Content-Type': 'application/json; charset=utf-8',
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-      'Access-Control-Allow-Methods': 'GET, OPTIONS',
-      'Cache-Control': 'no-store',
-    },
-    body: JSON.stringify(body),
-  };
-}
+export default async function handler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
-export async function handler(event) {
-  if (event.httpMethod === 'OPTIONS') return json(204, {});
-  if (event.httpMethod !== 'GET') return json(405, { error: 'Method not allowed' });
+  if (req.method === 'OPTIONS') return res.status(204).end();
+  if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
 
-  const auth = requireApiAuth(event);
-  if (!auth.ok) return authError();
+  if (!requireApiAuth(req, res)) return;
 
-  const status = await getOpenRouterStatus(event.headers?.origin);
-  return json(status.ok ? 200 : 503, status);
+  const status = await getOpenRouterStatus(req.headers.origin);
+  return res.status(status.ok ? 200 : 503).json(status);
 }
