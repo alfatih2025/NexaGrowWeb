@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { getMqttClient, publishMqtt, syncLocalControlState } from '../services/mqtt';
 
 export interface ControlLog {
@@ -6,16 +6,14 @@ export interface ControlLog {
   action: string;
   device: string;
   duration: number | null;
-  status: 'pending' | 'completed' | 'failed' | string;
+  status: string;
   executed_at: string;
-  command_id?: number;
 }
 
 const STORAGE_KEY = 'nexagrow-control-logs';
 
 function readStoredLogs(): ControlLog[] {
   if (typeof window === 'undefined') return [];
-
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
@@ -31,26 +29,59 @@ function persistStoredLogs(logs: ControlLog[]) {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(logs));
 }
 
-function createLog(
-  action: string,
-  device: string,
-  duration: number | null,
-  status: ControlLog['status'],
-  command_id?: number,
-): ControlLog {
+function createLog(action: string, device: string, duration: number | null, status: string): ControlLog {
   return {
-    id: command_id ?? Date.now() + Math.floor(Math.random() * 1000),
+    id: Date.now() + Math.floor(Math.random() * 1000),
     action,
     device,
     duration,
     status,
     executed_at: new Date().toISOString(),
-    command_id,
   };
 }
 
-function resolveCurrentDevice(device?: string) {
-  return String(device || 'ESP32_001').trim() || 'ESP32_001';
+function resolveControlCommand(action: string, duration?: number, data?: Record<string, any>) {
+  switch (action) {
+    case 'pump_on':
+      return { topic: 'sproutai/pompa/cmd', payload: 'ON' };
+    case 'pump_off':
+      return { topic: 'sproutai/pompa/cmd', payload: 'OFF' };
+    case 'pump_10s':
+      return {
+        topic: 'sproutai/ai/action',
+        payload: JSON.stringify({
+          pump: 'ON',
+          duration: duration ?? 10,
+        }),
+      };
+    case 'led_on':
+      return { topic: 'sproutai/lampu/cmd', payload: 'ON' };
+    case 'led_off':
+      return { topic: 'sproutai/lampu/cmd', payload: 'OFF' };
+    case 'mode_auto':
+      return { topic: 'sproutai/mode/cmd', payload: 'AUTO' };
+    case 'mode_manual':
+      return { topic: 'sproutai/mode/cmd', payload: 'MANUAL' };
+    case 'schedule_set':
+      return {
+        topic: 'sproutai/schedule/cmd',
+        payload: JSON.stringify({
+          watering_time: String(data?.watering_time ?? '').trim(),
+          watering_duration: Number(data?.watering_duration ?? 10),
+          schedule_enabled: Boolean(data?.schedule_enabled ?? true),
+        }),
+      };
+    case 'wifi_update': {
+      const ssid = String(data?.ssid ?? '').trim();
+      const password = String(data?.password ?? '');
+      return {
+        topic: 'sproutai/wifi/cmd',
+        payload: JSON.stringify({ ssid, password }),
+      };
+    }
+    default:
+      return null;
+  }
 }
 
 export function useControl() {
@@ -67,104 +98,67 @@ export function useControl() {
   }, []);
 
   const fetchLogs = useCallback(async () => {
-    try {
-      const response = await fetch('/api/control?limit=50');
-      if (!response.ok) throw new Error(`Control logs API gagal (${response.status})`);
-      const data = await response.json();
-      const next = Array.isArray(data) ? (data as ControlLog[]) : [];
-      setLogs(next);
-      persistStoredLogs(next);
-      return next;
-    } catch {
-      const stored = readStoredLogs();
-      setLogs(stored);
-      return stored;
-    }
+    const stored = readStoredLogs();
+    setLogs(stored);
+    return stored;
   }, []);
 
-  const resolveLocalCommand = useCallback(
-    async (action: string, duration?: number, data?: Record<string, any>) => {
-      const device = resolveCurrentDevice(data?.device);
-      const response = await fetch('/api/control', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action,
-          device,
-          duration: duration ?? null,
-          data: data ?? null,
-        }),
+  const sendCommand = useCallback(async (action: string, duration?: number, data?: Record<string, any>) => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const client = getMqttClient();
+      if (!client) throw new Error('MQTT client belum tersedia');
+
+      const mqttCommand = resolveControlCommand(action, duration, data);
+      if (!mqttCommand) throw new Error(`Perintah "${action}" tidak dikenal`);
+
+      if (!client.connected) {
+        await new Promise<void>((resolve, reject) => {
+          const timeout = window.setTimeout(() => {
+            cleanup();
+            reject(new Error('MQTT belum terhubung'));
+          }, 10_000);
+
+          const cleanup = () => {
+            window.clearTimeout(timeout);
+            client.off('connect', onConnect);
+            client.off('error', onError);
+          };
+
+          const onConnect = () => {
+            cleanup();
+            resolve();
+          };
+
+          const onError = (err: Error) => {
+            cleanup();
+            reject(err);
+          };
+
+          client.once('connect', onConnect);
+          client.once('error', onError);
+        });
+      }
+
+      await publishMqtt(mqttCommand.topic, mqttCommand.payload, {
+        retain: false,
+        qos: 1,
       });
 
-      const payload = await response.json().catch(() => null);
-      if (!response.ok) {
-        throw new Error(payload?.error || `Control API gagal (${response.status})`);
-      }
-      return payload as {
-        success: boolean;
-        command_id: number;
-        topic: string;
-        payload: string;
-        action: string;
-        device: string;
-        duration: number | null;
-      };
-    },
-    [],
-  );
-
-  const sendCommand = useCallback(
-    async (action: string, duration?: number, data?: Record<string, any>) => {
-      setLoading(true);
-      setError(null);
-
-      try {
-        const command = await resolveLocalCommand(action, duration, data);
-        const mqttClient = getMqttClient();
-        if (!mqttClient) {
-          throw new Error('MQTT client belum tersedia');
-        }
-
-        await publishMqtt(command.topic, command.payload, {
-          retain: false,
-          qos: 1,
-        });
-
-        syncLocalControlState(action, duration);
-
-        pushLog(
-          createLog(
-            action,
-            command.device || 'ESP32_001',
-            duration ?? null,
-            'pending',
-            command.command_id,
-          ),
-        );
-
-        window.setTimeout(() => {
-          void fetchLogs();
-        }, 2500);
-
-        return {
-          success: true,
-          command_id: command.command_id,
-        };
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'Unknown error';
-        setError(message);
-
-        pushLog(createLog(action, resolveCurrentDevice(data?.device), duration ?? null, 'failed'));
-        return {
-          success: false,
-          error: message,
-        };
-      } finally {
-        setLoading(false);
-      }
-    },
-    [fetchLogs, pushLog, resolveLocalCommand],
-  );
+      syncLocalControlState(action, duration, data);
+      pushLog(createLog(action, 'ESP32_001', duration ?? null, 'completed'));
+      return { success: true };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      setError(message);
+      pushLog(createLog(action, 'ESP32_001', duration ?? null, 'failed'));
+      return { success: false, error: message };
+    } finally {
+      setLoading(false);
+    }
+  }, [pushLog]);
 
   useEffect(() => {
     fetchLogs();

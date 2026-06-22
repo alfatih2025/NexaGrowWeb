@@ -1,3 +1,4 @@
+import { requireApiAuth, authError } from './_auth.js';
 import { sendOpenRouterMessage } from './_openrouter.js';
 
 function json(statusCode, body) {
@@ -17,6 +18,9 @@ function json(statusCode, body) {
 export async function handler(event) {
   if (event.httpMethod === 'OPTIONS') return json(204, {});
   if (event.httpMethod !== 'POST') return json(405, { error: 'Method not allowed' });
+
+  const auth = requireApiAuth(event);
+  if (!auth.ok) return authError();
 
   try {
     const body = event.body ? JSON.parse(event.body) : {};

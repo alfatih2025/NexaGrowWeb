@@ -1,14 +1,12 @@
 import mqtt, { type MqttClient } from 'mqtt';
 
-const BROKER_URL = import.meta.env.VITE_BROKER_URL as string | undefined;
-const MQTT_USERNAME = import.meta.env.VITE_MQTT_USERNAME as string | undefined;
-const MQTT_PASSWORD = import.meta.env.VITE_MQTT_PASSWORD as string | undefined;
+const BROKER_URL = (import.meta.env.VITE_BROKER_URL as string | undefined)?.trim() ?? '';
+const MQTT_USERNAME = (import.meta.env.VITE_MQTT_USERNAME as string | undefined)?.trim() ?? '';
+const MQTT_PASSWORD = (import.meta.env.VITE_MQTT_PASSWORD as string | undefined)?.trim() ?? '';
 
 const WEB_STATUS_TOPIC = 'sproutai/web/status';
+const DEVICE_STATUS_TOPIC = 'sproutai/esp32/status';
 const SYSTEM_STATUS_TOPIC = 'sproutai/system/status';
-
-const SUBSCRIBE_TOPICS = ['sproutai/#'];
-const ESP_ONLINE_TIMEOUT_MS = 30_000;
 
 const TOPIC_POMPA_CMD = 'sproutai/pompa/cmd';
 const TOPIC_POMPA_STATUS = 'sproutai/pompa/status';
@@ -16,20 +14,55 @@ const TOPIC_LAMPU_CMD = 'sproutai/lampu/cmd';
 const TOPIC_LAMPU_STATUS = 'sproutai/lampu/status';
 const TOPIC_MODE_CMD = 'sproutai/mode/cmd';
 const TOPIC_MODE_STATUS = 'sproutai/mode/status';
+const TOPIC_WIFI_CMD = 'sproutai/wifi/cmd';
+const TOPIC_WIFI_STATUS = 'sproutai/wifi/status';
+const TOPIC_SCHEDULE_CMD = 'sproutai/schedule/cmd';
+const TOPIC_SCHEDULE_STATUS = 'sproutai/schedule/status';
+const TOPIC_SENSOR_JSON = 'sproutai/sensor/data';
 const TOPIC_SOIL = 'sproutai/sensor/soil';
 const TOPIC_TEMP = 'sproutai/sensor/temp';
 const TOPIC_HUMIDITY = 'sproutai/sensor/humidity';
-const TOPIC_SENSOR_JSON = 'sproutai/sensor/data';
-const TOPIC_WIFI_STATUS = 'sproutai/wifi/status';
+const TOPIC_SCORE = 'sproutai/sensor/score';
+
+const SUBSCRIBE_TOPICS = [
+  DEVICE_STATUS_TOPIC,
+  SYSTEM_STATUS_TOPIC,
+  TOPIC_SENSOR_JSON,
+  TOPIC_SOIL,
+  TOPIC_TEMP,
+  TOPIC_HUMIDITY,
+  TOPIC_SCORE,
+  TOPIC_POMPA_STATUS,
+  TOPIC_LAMPU_STATUS,
+  TOPIC_MODE_STATUS,
+  TOPIC_WIFI_STATUS,
+  TOPIC_SCHEDULE_STATUS,
+];
+
+const ESP_ONLINE_TIMEOUT_MS = 30_000;
 
 export interface MqttSensorSnapshot {
+  device_id: string | null;
   temperature: number | null;
   humidity: number | null;
   soil_moisture: number | null;
+  rain: number | null;
+  score: number | null;
+  soil_score: number | null;
+  vdp_score: number | null;
+  rain_score: number | null;
+  vpd: number | null;
+  duration_estimate: number | null;
   pump_status: boolean;
   led_status: boolean;
   device_mode: 'manual' | 'auto' | null;
   wifi_status: string | null;
+  threshold_kritis: number | null;
+  threshold_atas: number | null;
+  threshold_bawah: number | null;
+  watering_time: string | null;
+  watering_duration: number | null;
+  schedule_enabled: boolean;
   updatedAt: string | null;
   sourceTopic: string | null;
 }
@@ -54,25 +87,39 @@ export interface MqttStatusSnapshot {
   sensorSnapshot: MqttSensorSnapshot | null;
 }
 
+type SensorDelta = Partial<Omit<MqttSensorSnapshot, 'updatedAt' | 'sourceTopic'>>;
+
 let client: MqttClient | null = null;
 const listeners = new Set<() => void>();
 
-const initialSensorSnapshot: MqttSensorSnapshot = {
+const emptySensorSnapshot: MqttSensorSnapshot = {
+  device_id: null,
   temperature: null,
   humidity: null,
   soil_moisture: null,
+  rain: null,
+  score: null,
+  soil_score: null,
+  vdp_score: null,
+  rain_score: null,
+  vpd: null,
+  duration_estimate: null,
   pump_status: false,
   led_status: false,
   device_mode: null,
   wifi_status: null,
+  threshold_kritis: null,
+  threshold_atas: null,
+  threshold_bawah: null,
+  watering_time: null,
+  watering_duration: null,
+  schedule_enabled: true,
   updatedAt: null,
   sourceTopic: null,
 };
 
-let sensorSnapshot: MqttSensorSnapshot | null = null;
-
-let snapshot: MqttStatusSnapshot = {
-  brokerUrl: BROKER_URL ?? '',
+const defaultSnapshot = (): MqttStatusSnapshot => ({
+  brokerUrl: BROKER_URL,
   browserOnline: typeof navigator === 'undefined' ? true : navigator.onLine,
   mqttConnected: false,
   mqttConnecting: Boolean(BROKER_URL),
@@ -88,33 +135,33 @@ let snapshot: MqttStatusSnapshot = {
   lastMessageAt: null,
   webPublishedAt: null,
   subscribedTopics: SUBSCRIBE_TOPICS,
-  sensorSnapshot,
-};
+  sensorSnapshot: null,
+});
 
-function computeSystemState(current: MqttStatusSnapshot) {
-  const reasons: string[] = [];
-  if (!current.browserOnline) reasons.push('Web offline');
-  if (!current.mqttConnected) reasons.push(current.mqttError || 'MQTT belum terhubung');
-  if (!current.espOnline) reasons.push('ESP32 offline');
-
-  const online = current.browserOnline && current.mqttConnected && current.espOnline;
-
-  return {
-    systemOnline: online,
-    systemLabel: online ? 'Online' : 'Offline',
-    systemDetail: online ? 'Web, MQTT, dan ESP32 aktif' : reasons.join(' • ') || 'Sistem belum siap',
-  };
-}
+let snapshot: MqttStatusSnapshot = defaultSnapshot();
+let sensorSnapshot: MqttSensorSnapshot | null = null;
+let reconnectTimer: number | null = null;
 
 function emit() {
   const lastSeen = snapshot.espLastSeenAt ? new Date(snapshot.espLastSeenAt).getTime() : 0;
   const espOnline = Boolean(lastSeen && Date.now() - lastSeen <= ESP_ONLINE_TIMEOUT_MS);
+  const reasonParts: string[] = [];
+
+  if (!snapshot.browserOnline) reasonParts.push('Web offline');
+  if (!snapshot.mqttConnected) reasonParts.push(snapshot.mqttError || 'MQTT belum terhubung');
+  if (!espOnline) reasonParts.push('ESP32 offline');
+
   snapshot = {
     ...snapshot,
     espOnline,
-    ...computeSystemState({ ...snapshot, espOnline }),
+    systemOnline: snapshot.browserOnline && snapshot.mqttConnected && espOnline,
+    systemLabel: snapshot.browserOnline && snapshot.mqttConnected && espOnline ? 'Online' : 'Offline',
+    systemDetail: snapshot.browserOnline && snapshot.mqttConnected && espOnline
+      ? 'Web, MQTT, dan ESP32 aktif'
+      : reasonParts.filter(Boolean).join(' • ') || 'Sistem belum siap',
     sensorSnapshot,
   };
+
   listeners.forEach((listener) => listener());
 }
 
@@ -123,18 +170,48 @@ function setSnapshot(next: Partial<MqttStatusSnapshot>) {
   emit();
 }
 
-function setSensorSnapshot(next: Partial<MqttSensorSnapshot>, markSeenAtTopic: string | null = null) {
+function setSensorSnapshot(next: SensorDelta, sourceTopic: string, force = false) {
   const now = new Date().toISOString();
-  const base = sensorSnapshot ?? initialSensorSnapshot;
-  sensorSnapshot = {
+  const base = sensorSnapshot ?? emptySensorSnapshot;
+  const merged: MqttSensorSnapshot = {
     ...base,
     ...next,
-    updatedAt: next.updatedAt ?? now,
-    sourceTopic: markSeenAtTopic ?? next.sourceTopic ?? base.sourceTopic,
+    updatedAt: now,
+    sourceTopic,
   };
+
+  const comparableBase = {
+    ...base,
+    updatedAt: null,
+    sourceTopic: null,
+  };
+
+  const comparableNext = {
+    ...merged,
+    updatedAt: null,
+    sourceTopic: null,
+  };
+
+  const changed = force || JSON.stringify(comparableBase) !== JSON.stringify(comparableNext);
+  if (!changed) {
+    snapshot = {
+      ...snapshot,
+      lastTopic: sourceTopic,
+      lastPayload: null,
+      lastMessageAt: now,
+      espLastSeenAt: now,
+    };
+    emit();
+    return;
+  }
+
+  sensorSnapshot = merged;
   snapshot = {
     ...snapshot,
     espLastSeenAt: now,
+    lastTopic: sourceTopic,
+    lastPayload: null,
+    lastMessageAt: now,
     sensorSnapshot,
   };
   emit();
@@ -144,103 +221,144 @@ function isWebSocketBroker(url: string) {
   return /^wss?:\/\//i.test(url);
 }
 
-function parseBooleanPayload(payload: string) {
-  const normalized = payload.trim().toLowerCase();
-  return normalized === 'on' || normalized === 'true' || normalized === '1';
+function parseNumeric(value: unknown): number | null {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value === 'string') {
+    const parsed = Number(value.trim().replace(',', '.'));
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
 }
 
-function parseModePayload(payload: string): 'manual' | 'auto' | null {
-  const normalized = payload.trim().toLowerCase();
+function parseBoolean(value: unknown): boolean | undefined {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value !== 0;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (['true', '1', 'on', 'yes', 'y'].includes(normalized)) return true;
+    if (['false', '0', 'off', 'no', 'n'].includes(normalized)) return false;
+  }
+  return undefined;
+}
+
+function parseMode(value: unknown): 'manual' | 'auto' | null | undefined {
+  if (typeof value !== 'string') return undefined;
+  const normalized = value.trim().toLowerCase();
   if (['auto', 'mode_auto', 'automatic', 'otomatis'].includes(normalized)) return 'auto';
   if (['manual', 'mode_manual', 'man', 'manual_mode'].includes(normalized)) return 'manual';
   return null;
 }
 
-function parseNumericPayload(payload: string) {
-  const value = Number(payload.trim().replace(',', '.'));
-  return Number.isFinite(value) ? value : null;
-}
-
-function normalizeJsonSensorPayload(payload: string): Partial<MqttSensorSnapshot> | null {
+function normalizeJsonSensorPayload(payload: string): SensorDelta | null {
   try {
     const parsed = JSON.parse(payload);
     if (!parsed || typeof parsed !== 'object') return null;
-
     const obj = parsed as Record<string, unknown>;
+    const wateringDuration = parseNumeric(obj.watering_duration);
+
     return {
-      temperature: typeof obj.temperature === 'number' ? obj.temperature : Number(obj.temperature ?? NaN),
-      humidity: typeof obj.humidity === 'number' ? obj.humidity : Number(obj.humidity ?? NaN),
-      soil_moisture: typeof obj.soil_moisture === 'number' ? obj.soil_moisture : Number(obj.soil_moisture ?? NaN),
-      pump_status: typeof obj.pump_status === 'boolean' ? obj.pump_status : undefined,
-      led_status: typeof obj.led_status === 'boolean' ? obj.led_status : undefined,
-      device_mode: obj.device_mode === 'auto' || obj.device_mode === 'manual' ? obj.device_mode : undefined,
+      device_id: typeof obj.device_id === 'string' ? obj.device_id : undefined,
+      temperature: parseNumeric(obj.temperature ?? obj.suhu),
+      humidity: parseNumeric(obj.humidity ?? obj.kelembapan_udara),
+      soil_moisture: parseNumeric(obj.soil_moisture ?? obj.soil ?? obj.tanah),
+      rain: parseNumeric(obj.rain ?? obj.hujan),
+      score: parseNumeric(obj.score ?? obj.score_total ?? obj.skor),
+      soil_score: parseNumeric(obj.soil_score ?? obj.skor_tanah),
+      vdp_score: parseNumeric(obj.vdp_score ?? obj.skor_vdp),
+      rain_score: parseNumeric(obj.rain_score ?? obj.skor_hujan),
+      vpd: parseNumeric(obj.vpd),
+      duration_estimate: parseNumeric(obj.duration_estimate ?? obj.duration ?? obj.durasi),
+      pump_status: parseBoolean(obj.pump_status),
+      led_status: parseBoolean(obj.led_status ?? obj.feeder_status),
+      device_mode: parseMode(obj.device_mode),
       wifi_status: typeof obj.wifi_status === 'string' ? obj.wifi_status : undefined,
+      threshold_kritis: parseNumeric(obj.threshold_kritis),
+      threshold_atas: parseNumeric(obj.threshold_atas),
+      threshold_bawah: parseNumeric(obj.threshold_bawah),
+      watering_time: typeof obj.watering_time === 'string' ? obj.watering_time : undefined,
+      watering_duration: wateringDuration,
+      schedule_enabled: parseBoolean(obj.schedule_enabled),
     };
   } catch {
     return null;
   }
 }
 
-function handleIncomingMessage(topic: string, payload: string) {
+function updateFromTopic(topic: string, payload: string) {
   const now = new Date().toISOString();
-  const lower = payload.trim().toLowerCase();
+  const trimmed = payload.trim();
 
-  const explicitOffline = ['offline', 'disconnected', 'false', '0'].includes(lower);
-  const explicitOnline = ['online', 'connected', 'true', '1'].includes(lower);
-
-  if (topic === WEB_STATUS_TOPIC || topic === SYSTEM_STATUS_TOPIC) {
-    if (explicitOffline) {
-      setSnapshot({ espOnline: false, espLastSeenAt: null });
+  if (topic === SYSTEM_STATUS_TOPIC || topic === DEVICE_STATUS_TOPIC) {
+    const lower = trimmed.toLowerCase();
+    if (['offline', 'disconnected', 'false', '0'].includes(lower)) {
+      setSnapshot({
+        espOnline: false,
+        espLastSeenAt: null,
+        lastTopic: topic,
+        lastPayload: payload,
+        lastMessageAt: now,
+      });
       return;
     }
-    if (explicitOnline || lower.length > 0) {
-      setSnapshot({ espLastSeenAt: now, lastTopic: topic, lastPayload: payload, lastMessageAt: now });
-      return;
-    }
+
+    setSnapshot({
+      espLastSeenAt: now,
+      lastTopic: topic,
+      lastPayload: payload,
+      lastMessageAt: now,
+    });
+    return;
   }
 
   if (topic === TOPIC_SENSOR_JSON) {
     const parsed = normalizeJsonSensorPayload(payload);
     if (parsed) {
-      setSensorSnapshot({
-        temperature: Number.isFinite(parsed.temperature) ? Number(parsed.temperature) : (sensorSnapshot?.temperature ?? null),
-        humidity: Number.isFinite(parsed.humidity) ? Number(parsed.humidity) : (sensorSnapshot?.humidity ?? null),
-        soil_moisture: Number.isFinite(parsed.soil_moisture) ? Number(parsed.soil_moisture) : (sensorSnapshot?.soil_moisture ?? null),
-        pump_status: parsed.pump_status ?? sensorSnapshot?.pump_status ?? false,
-        led_status: parsed.led_status ?? sensorSnapshot?.led_status ?? false,
-        device_mode: parsed.device_mode ?? sensorSnapshot?.device_mode ?? null,
-        wifi_status: parsed.wifi_status ?? sensorSnapshot?.wifi_status ?? null,
-        updatedAt: now,
-      }, topic);
-      setSnapshot({ lastTopic: topic, lastPayload: payload, lastMessageAt: now });
-      return;
+      setSensorSnapshot(parsed, topic, true);
+      setSnapshot({
+        lastTopic: topic,
+        lastPayload: payload,
+        lastMessageAt: now,
+      });
     }
+    return;
   }
 
   if (topic === TOPIC_SOIL) {
-    const value = parseNumericPayload(payload);
-    if (value !== null) {
-      setSensorSnapshot({ soil_moisture: value }, topic);
-    }
+    const value = parseNumeric(trimmed);
+    if (value !== null) setSensorSnapshot({ soil_moisture: value }, topic);
   } else if (topic === TOPIC_TEMP) {
-    const value = parseNumericPayload(payload);
-    if (value !== null) {
-      setSensorSnapshot({ temperature: value }, topic);
-    }
+    const value = parseNumeric(trimmed);
+    if (value !== null) setSensorSnapshot({ temperature: value }, topic);
   } else if (topic === TOPIC_HUMIDITY) {
-    const value = parseNumericPayload(payload);
-    if (value !== null) {
-      setSensorSnapshot({ humidity: value }, topic);
-    }
+    const value = parseNumeric(trimmed);
+    if (value !== null) setSensorSnapshot({ humidity: value }, topic);
+  } else if (topic === TOPIC_SCORE) {
+    const value = parseNumeric(trimmed);
+    if (value !== null) setSensorSnapshot({ score: value }, topic);
   } else if (topic === TOPIC_POMPA_STATUS) {
-    setSensorSnapshot({ pump_status: parseBooleanPayload(payload) }, topic);
+    const value = parseBoolean(trimmed);
+    if (value !== undefined) setSensorSnapshot({ pump_status: value }, topic);
   } else if (topic === TOPIC_LAMPU_STATUS) {
-    setSensorSnapshot({ led_status: parseBooleanPayload(payload) }, topic);
+    const value = parseBoolean(trimmed);
+    if (value !== undefined) setSensorSnapshot({ led_status: value }, topic);
   } else if (topic === TOPIC_MODE_STATUS) {
-    const mode = parseModePayload(payload);
-    if (mode) setSensorSnapshot({ device_mode: mode }, topic);
+    const mode = parseMode(trimmed);
+    if (mode !== undefined) setSensorSnapshot({ device_mode: mode }, topic);
   } else if (topic === TOPIC_WIFI_STATUS) {
-    setSensorSnapshot({ wifi_status: payload.trim() || null }, topic);
+    setSensorSnapshot({ wifi_status: trimmed || null }, topic);
+  } else if (topic === TOPIC_SCHEDULE_STATUS) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (parsed && typeof parsed === 'object') {
+        setSensorSnapshot({
+          watering_time: typeof parsed.watering_time === 'string' ? parsed.watering_time : undefined,
+          watering_duration: parseNumeric(parsed.watering_duration),
+          schedule_enabled: parseBoolean(parsed.schedule_enabled),
+        }, topic);
+      }
+    } catch {
+      // ignore non-JSON schedule messages
+    }
   }
 
   if (
@@ -249,6 +367,7 @@ function handleIncomingMessage(topic: string, payload: string) {
     topic.startsWith('sproutai/lampu/') ||
     topic.startsWith('sproutai/mode/') ||
     topic.startsWith('sproutai/wifi/') ||
+    topic.startsWith('sproutai/schedule/') ||
     topic.startsWith('sproutai/esp32/')
   ) {
     setSnapshot({
@@ -265,16 +384,15 @@ function connectOnce() {
 
   if (!isWebSocketBroker(BROKER_URL)) {
     setSnapshot({
-      mqttError:
-        'VITE_BROKER_URL harus ws:// atau wss:// untuk browser. Jangan pakai mqtt:// atau tcp://',
+      mqttError: 'VITE_BROKER_URL harus ws:// atau wss:// untuk browser.',
       mqttConnecting: false,
     });
     return null;
   }
 
   client = mqtt.connect(BROKER_URL, {
-    username: MQTT_USERNAME,
-    password: MQTT_PASSWORD,
+    username: MQTT_USERNAME || undefined,
+    password: MQTT_PASSWORD || undefined,
     reconnectPeriod: 2000,
     connectTimeout: 10_000,
     clean: true,
@@ -294,16 +412,7 @@ function connectOnce() {
       client?.subscribe(topic, { qos: 1 });
     }
 
-    client?.publish(
-      WEB_STATUS_TOPIC,
-      JSON.stringify({
-        device: 'sprout-web',
-        status: 'online',
-        at: new Date().toISOString(),
-      }),
-      { retain: true, qos: 0 },
-    );
-
+    announceWebPresence('online').catch(() => {});
     setSnapshot({ webPublishedAt: new Date().toISOString() });
   });
 
@@ -330,7 +439,7 @@ function connectOnce() {
     });
   });
 
-  client.on('error', (err) => {
+  client.on('error', (err: Error) => {
     setSnapshot({
       mqttConnected: false,
       mqttConnecting: false,
@@ -338,9 +447,8 @@ function connectOnce() {
     });
   });
 
-  client.on('message', (topic, message) => {
-    const payload = message.toString();
-    handleIncomingMessage(topic, payload);
+  client.on('message', (topic: string, message: Buffer) => {
+    updateFromTopic(topic, message.toString());
   });
 
   if (typeof window !== 'undefined') {
@@ -391,7 +499,6 @@ export function publishMqtt(
   options: Record<string, unknown> = {},
 ) {
   const currentClient = connectOnce();
-
   if (!currentClient) {
     return Promise.reject(new Error('MQTT client belum tersedia'));
   }
@@ -418,12 +525,20 @@ export function publishMqtt(
         topic,
         payload,
         { qos: 1, retain: false, ...options },
-        (err) => {
+        (err: Error | null | undefined) => {
           cleanup();
           if (err) {
             reject(err);
             return;
           }
+
+          snapshot = {
+            ...snapshot,
+            lastTopic: topic,
+            lastPayload: payload,
+            lastMessageAt: new Date().toISOString(),
+          };
+          emit();
           resolve();
         },
       );
@@ -439,30 +554,37 @@ export function publishMqtt(
   });
 }
 
-export function syncLocalControlState(action: string, duration?: number) {
+function applyLocalSnapshot(action: string, duration?: number, data?: Record<string, any>) {
   const now = new Date().toISOString();
 
   switch (action) {
     case 'pump_on':
-      setSensorSnapshot({ pump_status: true }, TOPIC_POMPA_STATUS);
+      setSensorSnapshot({ pump_status: true }, TOPIC_POMPA_STATUS, true);
       break;
     case 'pump_off':
-      setSensorSnapshot({ pump_status: false }, TOPIC_POMPA_STATUS);
+      setSensorSnapshot({ pump_status: false }, TOPIC_POMPA_STATUS, true);
       break;
     case 'pump_10s':
-      setSensorSnapshot({ pump_status: true }, TOPIC_POMPA_STATUS);
+      setSensorSnapshot({ pump_status: true }, TOPIC_POMPA_STATUS, true);
       break;
     case 'led_on':
-      setSensorSnapshot({ led_status: true }, TOPIC_LAMPU_STATUS);
+      setSensorSnapshot({ led_status: true }, TOPIC_LAMPU_STATUS, true);
       break;
     case 'led_off':
-      setSensorSnapshot({ led_status: false }, TOPIC_LAMPU_STATUS);
+      setSensorSnapshot({ led_status: false }, TOPIC_LAMPU_STATUS, true);
       break;
     case 'mode_auto':
-      setSensorSnapshot({ device_mode: 'auto' }, TOPIC_MODE_STATUS);
+      setSensorSnapshot({ device_mode: 'auto' }, TOPIC_MODE_STATUS, true);
       break;
     case 'mode_manual':
-      setSensorSnapshot({ device_mode: 'manual' }, TOPIC_MODE_STATUS);
+      setSensorSnapshot({ device_mode: 'manual' }, TOPIC_MODE_STATUS, true);
+      break;
+    case 'schedule_set':
+      setSensorSnapshot({
+        watering_time: typeof data?.watering_time === 'string' ? data.watering_time : undefined,
+        watering_duration: parseNumeric(data?.watering_duration),
+        schedule_enabled: data?.schedule_enabled === undefined ? undefined : Boolean(data.schedule_enabled),
+      }, TOPIC_SCHEDULE_STATUS, true);
       break;
     default:
       break;
@@ -470,9 +592,13 @@ export function syncLocalControlState(action: string, duration?: number) {
 
   setSnapshot({
     lastTopic: action,
-    lastPayload: duration ? String(duration) : action,
+    lastPayload: data ? JSON.stringify(data) : duration != null ? String(duration) : action,
     lastMessageAt: now,
   });
+}
+
+export function syncLocalControlState(action: string, duration?: number, data?: Record<string, any>) {
+  applyLocalSnapshot(action, duration, data);
 }
 
 export function announceWebPresence(status: 'online' | 'offline' = 'online') {
@@ -490,7 +616,15 @@ export function announceWebPresence(status: 'online' | 'offline' = 'online') {
       WEB_STATUS_TOPIC,
       payload,
       { retain: true, qos: 0 },
-      () => resolve(true),
+      () => {
+        setSnapshot({
+          webPublishedAt: new Date().toISOString(),
+          lastTopic: WEB_STATUS_TOPIC,
+          lastPayload: payload,
+          lastMessageAt: new Date().toISOString(),
+        });
+        resolve(true);
+      },
     );
   });
 }

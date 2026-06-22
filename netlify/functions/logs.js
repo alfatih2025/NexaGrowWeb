@@ -1,4 +1,5 @@
 import supabase from './_supabase.js';
+import { requireApiAuth, authError } from './_auth.js';
 
 function json(statusCode, body) {
   return {
@@ -6,7 +7,7 @@ function json(statusCode, body) {
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-api-key',
       'Access-Control-Allow-Methods': 'GET, OPTIONS',
       'Cache-Control': 'no-store',
     },
@@ -16,25 +17,30 @@ function json(statusCode, body) {
 
 export async function handler(event) {
   if (event.httpMethod === 'OPTIONS') return json(204, {});
-  if (event.httpMethod !== 'GET') return json(405, { error: 'Method not allowed' });
-  if (!supabase) return json(200, []);
+  if (!supabase) return json(500, { error: 'Supabase belum dikonfigurasi' });
 
   try {
-    const limit = Math.min(Number(event.queryStringParameters?.limit ?? 100) || 100, 500);
-    const type = event.queryStringParameters?.type || '';
+    if (event.httpMethod === 'GET') {
+      if (!requireApiAuth(event)) return authError();
 
-    let query = supabase
-      .from('activity_logs')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(limit);
+      const type = event.queryStringParameters?.type;
+      const limit = Math.min(Number(event.queryStringParameters?.limit ?? 100) || 100, 500);
 
-    if (type) query = query.eq('type', type);
+      let query = supabase
+        .from('activity_logs')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(limit);
 
-    const { data, error } = await query;
-    if (error) throw error;
-    return json(200, data || []);
+      if (type) query = query.eq('type', type);
+
+      const { data, error } = await query;
+      if (error) throw error;
+      return json(200, data || []);
+    }
+
+    return json(405, { error: 'Method not allowed' });
   } catch (error) {
-    return json(500, { error: error instanceof Error ? error.message : 'Logs API error' });
+    return json(500, { error: error instanceof Error ? error.message : 'Logs error' });
   }
 }

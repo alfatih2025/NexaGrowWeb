@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { FileText, Download, Bot, Zap, CloudRain, Settings2 } from 'lucide-react';
+import { buildApiHeaders } from '../lib/apiAuth';
 
 interface LogEntry {
   id: number;
@@ -21,7 +22,9 @@ export function LogsPage() {
 
   const fetchLogs = async () => {
     try {
-      const res = await fetch('/api/logs?limit=100');
+      const res = await fetch('/api/logs?limit=100', {
+        headers: buildApiHeaders(),
+      });
       if (!res.ok) throw new Error('Failed to fetch logs');
       const data = await res.json();
       setLogs(Array.isArray(data) ? data : []);
@@ -34,7 +37,9 @@ export function LogsPage() {
 
   const exportData = async (type: string) => {
     try {
-      const res = await fetch(`/api/export?type=${type}&format=csv`);
+      const res = await fetch(`/api/export?type=${type}&format=csv`, {
+        headers: buildApiHeaders(),
+      });
       if (!res.ok) throw new Error('Export failed');
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);

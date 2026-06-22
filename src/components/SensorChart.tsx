@@ -1,14 +1,12 @@
 import { useMemo } from 'react';
 import {
-  LineChart,
-  Line,
+  AreaChart,
+  Area,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  AreaChart,
-  Area
 } from 'recharts';
 import { SensorData } from '../hooks/useSensorData';
 
@@ -25,15 +23,14 @@ const typeConfig = {
   soil_moisture: { label: 'Kelembapan Tanah (%)', min: 0, max: 100 },
 };
 
-
 export function SensorChart({ data, type, title, color }: SensorChartProps) {
   const chartData = useMemo(() => {
     return [...data]
       .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
-      .map(item => ({
+      .map((item) => ({
         time: new Date(item.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
         value: item[type],
-        fullDate: new Date(item.created_at).toLocaleString('id-ID')
+        fullDate: new Date(item.created_at).toLocaleString('id-ID'),
       }));
   }, [data, type]);
 
@@ -47,37 +44,44 @@ export function SensorChart({ data, type, title, color }: SensorChartProps) {
           <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
             <defs>
               <linearGradient id={`gradient-${type}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor={color} stopOpacity={0.3}/>
-                <stop offset="95%" stopColor={color} stopOpacity={0}/>
+                <stop offset="5%" stopColor={color} stopOpacity={0.3} />
+                <stop offset="95%" stopColor={color} stopOpacity={0} />
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-            <XAxis 
-              dataKey="time" 
+            <XAxis
+              dataKey="time"
               tick={{ fontSize: 12 }}
               tickLine={false}
               axisLine={{ stroke: '#e5e5e5' }}
             />
-            <YAxis 
+            <YAxis
               domain={[config.min, config.max]}
               tick={{ fontSize: 12 }}
               tickLine={false}
               axisLine={false}
               label={{ value: config.label, angle: -90, position: 'insideLeft', style: { fontSize: 12 } }}
             />
-            <Tooltip 
-              contentStyle={{ 
-                backgroundColor: 'white', 
-                border: '1px solid #e5e5e5', 
+            <Tooltip
+              contentStyle={{
+                backgroundColor: 'white',
+                border: '1px solid #e5e5e5',
                 borderRadius: '12px',
-                boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
+                boxShadow: '0 4px 20px rgba(0,0,0,0.1)',
               }}
               labelStyle={{ color: '#666', fontSize: 12 }}
+              formatter={(value) => {
+                if (typeof value === 'number') {
+                  return [`${value.toFixed(1)}`, config.label];
+                }
+                const parsed = Number(value);
+                return [Number.isFinite(parsed) ? parsed.toFixed(1) : value, config.label];
+              }}
             />
-            <Area 
-              type="monotone" 
-              dataKey="value" 
-              stroke={color} 
+            <Area
+              type="monotone"
+              dataKey="value"
+              stroke={color}
               fill={`url(#gradient-${type})`}
               strokeWidth={2}
               dot={{ fill: color, strokeWidth: 0, r: 3 }}

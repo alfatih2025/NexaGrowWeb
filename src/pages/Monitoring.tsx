@@ -7,6 +7,11 @@ interface MonitoringProps {
   history: SensorData[];
 }
 
+function formatOneDecimal(value: number | string | null | undefined) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed.toFixed(1) : '-';
+}
+
 export function Monitoring({ history }: MonitoringProps) {
   return (
     <div className="space-y-6">
@@ -15,7 +20,7 @@ export function Monitoring({ history }: MonitoringProps) {
         <h2 className="text-2xl font-bold text-gray-800">Monitoring Real-time</h2>
       </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <SensorChart
           data={history}
           type="temperature"
@@ -28,7 +33,6 @@ export function Monitoring({ history }: MonitoringProps) {
           title="Grafik Kelembapan Udara (%)"
           color="#3b82f6"
         />
-
 
         <SensorChart
           data={history}
@@ -75,16 +79,15 @@ export function Monitoring({ history }: MonitoringProps) {
                     <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${
                       item.temperature > 35 ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'
                     }`}>
-                      {item.temperature}°C
+                      {formatOneDecimal(item.temperature)}°C
                     </span>
                   </td>
-                  <td className="px-6 py-4 text-sm text-gray-600">{item.humidity}%</td>
+                  <td className="px-6 py-4 text-sm text-gray-600">{formatOneDecimal(item.humidity)}%</td>
                   <td className="px-6 py-4">
-
                     <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${
                       item.soil_moisture < 40 ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'
                     }`}>
-                      {item.soil_moisture}%
+                      {formatOneDecimal(item.soil_moisture)}%
                     </span>
                   </td>
                   <td className="px-6 py-4">

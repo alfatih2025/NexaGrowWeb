@@ -46,26 +46,15 @@ function normalizeRow(row) {
   };
 }
 
-function json(statusCode, body) {
-  return {
-    statusCode,
-    headers: {
-      'Content-Type': 'application/json; charset=utf-8',
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Cache-Control': 'no-store',
-    },
-    body: JSON.stringify(body),
-  };
-}
+export default async function handler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  if (req.method === 'OPTIONS') return res.status(204).end();
 
-export async function handler(event) {
-  if (event.httpMethod === 'OPTIONS') return json(204, {});
   try {
-    if (event.httpMethod === 'GET') {
-      const limit = Number(event.queryStringParameters?.limit ?? 100) || 100;
-      const latest = event.queryStringParameters?.latest;
+    if (req.method === 'GET') {
+      const { limit = 100, latest } = req.query;
 
       if (latest === 'true') {
         const { data, error } = await supabase
@@ -76,21 +65,21 @@ export async function handler(event) {
 
         if (error) throw error;
         const row = Array.isArray(data) ? data[0] : data;
-        return json(200, row ? normalizeRow(row) : null);
+        return res.status(200).json(row ? normalizeRow(row) : null);
       }
 
       const { data, error } = await supabase
         .from('sensor_data')
         .select('*')
         .order('created_at', { ascending: false })
-        .limit(limit);
+        .limit(parseInt(limit, 10) || 100);
 
       if (error) throw error;
-      return json(200, Array.isArray(data) ? data.map(normalizeRow).filter(Boolean) : []);
+      return res.status(200).json(Array.isArray(data) ? data.map(normalizeRow).filter(Boolean) : []);
     }
 
-    if (event.httpMethod === 'POST') {
-      const body = event.body ? JSON.parse(event.body) : {};
+    if (req.method === 'POST') {
+      const body = req.body || {};
       const payload = {
         device_id: body.device_id || 'ESP32_001',
         temperature: toNumber(body.temperature, 0),
@@ -113,11 +102,12 @@ export async function handler(event) {
         .single();
 
       if (error) throw error;
-      return json(201, normalizeRow(data));
+      return res.status(201).json(normalizeRow(data));
     }
 
-    return json(405, { error: 'Method not allowed' });
+    res.status(405).json({ error: 'Method not allowed' });
   } catch (err) {
-    return json(500, { error: err?.message || 'Unknown error' });
+    console.error('Sensor API error:', err);
+    res.status(500).json({ error: err?.message || 'Unknown error' });
   }
 }

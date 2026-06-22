@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { AlertTriangle, X, Thermometer, Droplets} from 'lucide-react';
+import { AlertTriangle, X, Thermometer, Droplets } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { SensorData } from '../hooks/useSensorData';
 import { Settings } from '../hooks/useSettings';
@@ -31,9 +31,9 @@ export function AlertBanner({ sensorData, settings }: AlertBannerProps) {
       newAlerts.push({
         id: 'temp-high',
         type: 'temperature',
-        message: `Suhu terlalu tinggi (${sensorData.temperature}°C). Pastikan irigasi cukup.`,
+        message: `Suhu terlalu tinggi (${sensorData.temperature}°C).`,
         severity: 'danger',
-        icon: Thermometer
+        icon: Thermometer,
       });
     }
 
@@ -41,30 +41,36 @@ export function AlertBanner({ sensorData, settings }: AlertBannerProps) {
       newAlerts.push({
         id: 'temp-low',
         type: 'temperature',
-        message: `Suhu terlalu rendah (${sensorData.temperature}°C). Pantau kondisi tanaman.`,
+        message: `Suhu terlalu rendah (${sensorData.temperature}°C).`,
         severity: 'warning',
-        icon: Thermometer
+        icon: Thermometer,
       });
     }
 
-    if (sensorData.soil_moisture < settings.soil_moisture_threshold) {
+    if (sensorData.soil_moisture < settings.soil_threshold_critical) {
+      newAlerts.push({
+        id: 'soil-critical',
+        type: 'soil',
+        message: `Kelembapan tanah kritis (${sensorData.soil_moisture}%).`,
+        severity: 'danger',
+        icon: Droplets,
+      });
+    } else if (sensorData.soil_moisture < settings.soil_threshold_low) {
       newAlerts.push({
         id: 'soil-low',
         type: 'soil',
-        message: `Kelembapan tanah rendah (${sensorData.soil_moisture}%). Perlu penyiraman.`,
-        severity: 'danger',
-        icon: Droplets
+        message: `Kelembapan tanah rendah (${sensorData.soil_moisture}%).`,
+        severity: 'warning',
+        icon: Droplets,
       });
     }
 
-
-
-    setAlerts(newAlerts.filter(a => !dismissed.has(a.id)));
+    setAlerts(newAlerts.filter((a) => !dismissed.has(a.id)));
   }, [sensorData, settings, dismissed]);
 
   const dismissAlert = (id: string) => {
-    setDismissed(prev => new Set(prev).add(id));
-    setAlerts(prev => prev.filter(a => a.id !== id));
+    setDismissed((prev) => new Set(prev).add(id));
+    setAlerts((prev) => prev.filter((a) => a.id !== id));
   };
 
   return (
@@ -76,36 +82,22 @@ export function AlertBanner({ sensorData, settings }: AlertBannerProps) {
           animate={{ opacity: 1, y: 0, height: 'auto' }}
           exit={{ opacity: 0, y: -20, height: 0 }}
           className={`mb-4 p-4 rounded-xl border-l-4 ${
-            alert.severity === 'danger' 
-              ? 'bg-red-50 border-red-500' 
+            alert.severity === 'danger'
+              ? 'bg-red-50 border-red-500'
               : 'bg-amber-50 border-amber-500'
           }`}
         >
           <div className="flex items-start gap-3">
-            <div className={`p-2 rounded-lg ${
-              alert.severity === 'danger' ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-600'
-            }`}>
-              <alert.icon size={20} />
-            </div>
+            <alert.icon className={`w-5 h-5 mt-0.5 ${alert.severity === 'danger' ? 'text-red-500' : 'text-amber-500'}`} />
             <div className="flex-1">
-              <div className="flex items-center gap-2 mb-1">
-                <AlertTriangle size={16} className={alert.severity === 'danger' ? 'text-red-500' : 'text-amber-500'} />
-                <span className={`text-sm font-semibold ${
-                  alert.severity === 'danger' ? 'text-red-700' : 'text-amber-700'
-                }`}>
-                  {alert.severity === 'danger' ? 'PERINGATAN KRITIS' : 'PERHATIAN'}
-                </span>
+              <div className="flex items-center justify-between gap-2">
+                <p className="font-medium text-gray-800">{alert.message}</p>
+                <button onClick={() => dismissAlert(alert.id)} className="text-gray-400 hover:text-gray-600">
+                  <X className="w-4 h-4" />
+                </button>
               </div>
-              <p className={`text-sm ${alert.severity === 'danger' ? 'text-red-600' : 'text-amber-600'}`}>
-                {alert.message}
-              </p>
+              <p className="text-xs text-gray-500 mt-1">{alert.type}</p>
             </div>
-            <button
-              onClick={() => dismissAlert(alert.id)}
-              className="p-1 hover:bg-black/5 rounded-lg transition-colors"
-            >
-              <X size={16} className="text-gray-400" />
-            </button>
           </div>
         </motion.div>
       ))}

@@ -1,4 +1,5 @@
 import supabase from './_supabase.js';
+import { requireApiAuth, authError } from './_auth.js';
 
 const DEFAULT_SETTINGS = {
   id: 1,
@@ -11,6 +12,9 @@ const DEFAULT_SETTINGS = {
   ph_max: 8.0,
   auto_report: true,
   report_time: '08:00',
+  watering_time: '06:00',
+  watering_duration: 10,
+  watering_enabled: true,
   user_name: 'Petani Cerdas',
   user_email: 'petani@sprout.id',
 };
@@ -21,7 +25,7 @@ function json(statusCode, body) {
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-api-key',
       'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS',
       'Cache-Control': 'no-store',
     },
@@ -49,6 +53,9 @@ function normalizeSettings(input) {
     ph_max: clampNumber(obj.ph_max, 0, 14, DEFAULT_SETTINGS.ph_max),
     auto_report: Boolean(obj.auto_report),
     report_time: typeof obj.report_time === 'string' && /^\d{2}:\d{2}$/.test(obj.report_time) ? obj.report_time : DEFAULT_SETTINGS.report_time,
+    watering_time: typeof obj.watering_time === 'string' && /^\d{2}:\d{2}$/.test(obj.watering_time) ? obj.watering_time : DEFAULT_SETTINGS.watering_time,
+    watering_duration: clampNumber(obj.watering_duration, 1, 3600, DEFAULT_SETTINGS.watering_duration),
+    watering_enabled: Boolean(obj.watering_enabled),
     user_name: String(obj.user_name || DEFAULT_SETTINGS.user_name).trim() || DEFAULT_SETTINGS.user_name,
     user_email: String(obj.user_email || DEFAULT_SETTINGS.user_email).trim() || DEFAULT_SETTINGS.user_email,
     updated_at: new Date().toISOString(),
@@ -72,13 +79,15 @@ export async function handler(event) {
     }
 
     if (event.httpMethod === 'PUT' || event.httpMethod === 'POST') {
+      if (!requireApiAuth(event)) return authError();
+
       const body = event.body ? JSON.parse(event.body) : {};
       const payload = normalizeSettings(body);
 
       const { data, error } = await supabase
         .from('settings')
         .upsert(payload)
-        .select('*')
+        .select()
         .single();
 
       if (error) throw error;
@@ -86,14 +95,14 @@ export async function handler(event) {
       await supabase.from('activity_logs').insert({
         type: 'settings',
         message: 'Settings updated',
-        details: payload,
+        details: body,
       }).catch(() => {});
 
-      return json(200, data || payload);
+      return json(200, data);
     }
 
     return json(405, { error: 'Method not allowed' });
   } catch (error) {
-    return json(500, { error: error instanceof Error ? error.message : 'Settings API error' });
+    return json(500, { error: error instanceof Error ? error.message : 'Settings error' });
   }
 }

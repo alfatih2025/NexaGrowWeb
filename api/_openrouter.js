@@ -31,7 +31,7 @@ function readLocalEnv() {
       envMap[key] = value;
     }
   } catch {
-    // ignore
+    // ignore missing local env
   }
 
   cachedLocalEnv = envMap;
@@ -64,7 +64,7 @@ function getHeaders(origin) {
   return {
     Authorization: `Bearer ${getOpenRouterKey()}`,
     'Content-Type': 'application/json',
-    'HTTP-Referer': origin || 'http://localhost:5500',
+    'HTTP-Referer': origin || 'http://localhost:5173',
     'X-Title': 'NexaGrow NexaBot',
   };
 }
@@ -89,12 +89,9 @@ function safeBoolean(value) {
   return undefined;
 }
 
-function safeMode(value) {
-  if (typeof value !== 'string') return null;
-  const normalized = value.trim().toLowerCase();
-  if (['auto', 'mode_auto', 'automatic', 'otomatis'].includes(normalized)) return 'auto';
-  if (['manual', 'mode_manual', 'man', 'manual_mode'].includes(normalized)) return 'manual';
-  return null;
+function safePhase(value) {
+  if (typeof value !== 'string') return 'vegetatif';
+  return value.trim().toLowerCase() === 'generatif' ? 'generatif' : 'vegetatif';
 }
 
 function normalizeSensorContext(sensor) {
@@ -114,30 +111,40 @@ function normalizeSensorContext(sensor) {
     duration_estimate: safeNumber(sensor.duration_estimate),
     pump_status: safeBoolean(sensor.pump_status) ?? false,
     led_status: safeBoolean(sensor.led_status) ?? false,
-    device_mode: safeMode(sensor.device_mode),
+    device_mode: typeof sensor.device_mode === 'string' && ['manual', 'auto'].includes(sensor.device_mode) ? sensor.device_mode : null,
     wifi_status: typeof sensor.wifi_status === 'string' && sensor.wifi_status.trim() ? sensor.wifi_status.trim() : null,
     threshold_kritis: safeNumber(sensor.threshold_kritis),
     threshold_atas: safeNumber(sensor.threshold_atas),
     threshold_bawah: safeNumber(sensor.threshold_bawah),
     watering_time: typeof sensor.watering_time === 'string' && sensor.watering_time.trim() ? sensor.watering_time.trim() : null,
     watering_duration: safeNumber(sensor.watering_duration),
-    schedule_enabled: safeBoolean(sensor.schedule_enabled) ?? true,
-    created_at: typeof sensor.created_at === 'string' && sensor.created_at.trim() ? sensor.created_at.trim() : null,
-    updatedAt: typeof sensor.updatedAt === 'string' && sensor.updatedAt.trim() ? sensor.updatedAt.trim() : null,
-    sourceTopic: typeof sensor.sourceTopic === 'string' && sensor.sourceTopic.trim() ? sensor.sourceTopic.trim() : null,
+    schedule_enabled: safeBoolean(sensor.schedule_enabled),
+    created_at: typeof sensor.created_at === 'string' ? sensor.created_at : null,
+    updatedAt: typeof sensor.updatedAt === 'string' ? sensor.updatedAt : null,
+    sourceTopic: typeof sensor.sourceTopic === 'string' ? sensor.sourceTopic : null,
+    plant_phase: safePhase(sensor.plant_phase || sensor.crop_mode),
+    soil_threshold_low: safeNumber(sensor.soil_threshold_low ?? sensor.soil_moisture_threshold),
+    soil_threshold_high: safeNumber(sensor.soil_threshold_high),
+    soil_threshold_critical: safeNumber(sensor.soil_threshold_critical),
+    temp_threshold_low: safeNumber(sensor.temp_threshold_low),
+    temp_threshold_high: safeNumber(sensor.temp_threshold_high),
   };
 }
 
 function formatLine(label, value, suffix = '') {
-  const displayValue = value === null || value === undefined || value === '' ? '-' : value;
-  return `- ${label}: ${displayValue}${suffix}`;
+  if (value === null || value === undefined || value === '') return `- ${label}: -`;
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return `- ${label}: ${Number(value).toFixed(1)}${suffix}`;
+  }
+  return `- ${label}: ${value}${suffix}`;
 }
 
-export function buildSystemPrompt(sensor) {
+function buildSystemPrompt(sensor) {
   const normalized = normalizeSensorContext(sensor);
   const sensorLines = normalized
     ? [
         formatLine('Device ID', normalized.device_id),
+        formatLine('Fase Tanaman', normalized.plant_phase ? normalized.plant_phase.toUpperCase() : 'VEGETATIF'),
         formatLine('Suhu', normalized.temperature, ' °C'),
         formatLine('Kelembapan Udara', normalized.humidity, ' %'),
         formatLine('Kelembapan Tanah', normalized.soil_moisture, ' %'),
@@ -151,6 +158,11 @@ export function buildSystemPrompt(sensor) {
         formatLine('Threshold Kritis', normalized.threshold_kritis),
         formatLine('Threshold Atas', normalized.threshold_atas),
         formatLine('Threshold Bawah', normalized.threshold_bawah),
+        formatLine('Batas Tanah Rendah', normalized.soil_threshold_low, ' %'),
+        formatLine('Batas Tanah Tinggi', normalized.soil_threshold_high, ' %'),
+        formatLine('Batas Kritis Tanah', normalized.soil_threshold_critical, ' %'),
+        formatLine('Batas Suhu Rendah', normalized.temp_threshold_low, ' °C'),
+        formatLine('Batas Suhu Tinggi', normalized.temp_threshold_high, ' °C'),
         formatLine('Waktu Data', normalized.created_at || normalized.updatedAt),
       ].join('\n')
     : '- Data sensor belum tersedia.';
@@ -160,7 +172,9 @@ export function buildSystemPrompt(sensor) {
     'Jawab dalam bahasa Indonesia yang ramah, singkat, dan langsung bisa dipakai.',
     'Fokus pada kondisi tanaman, rekomendasi perawatan, irigasi, jadwal penyiraman, dan perangkat IoT.',
     'Gunakan data sensor yang diberikan sebagai sumber utama. Jangan mengarang angka yang tidak ada.',
+    'Jika pengguna memberi skenario hipotetis yang berbeda dari data sensor nyata, prioritaskan skenario pengguna dan jawab sesuai konteks baru itu.',
     'Jika data sensor belum tersedia, katakan bahwa data belum masuk lalu berikan saran umum yang aman.',
+    'Bila fase tanaman aktif disebut vegetatif atau generatif, sesuaikan saran air, suhu, dan stres tanaman dengan fase tersebut.',
     '',
     'DATA SENSOR TERKINI:',
     sensorLines,
@@ -237,8 +251,8 @@ export async function sendOpenRouterMessage({ message, history = [], sensorConte
     body: JSON.stringify({
       model: getOpenRouterModel(),
       messages,
-      temperature: 0.5,
-      max_tokens: 500,
+      temperature: 0.45,
+      max_tokens: 550,
     }),
   });
 

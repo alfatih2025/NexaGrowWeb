@@ -2,10 +2,7 @@ import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 // @ts-ignore
-// In dev we mock OpenRouter endpoints via middleware.
-// Real implementations live in Vite dev middleware below.
-// (Removed broken import) 
-
+import { getOpenRouterStatus, sendOpenRouterMessage } from './api/_openrouter.js';
 
 async function readBody(req: NodeJS.ReadableStream) {
   const chunks: Buffer[] = [];
@@ -41,13 +38,7 @@ function openRouterDevPlugin() {
             return;
           }
 
-          const status = await (async () => ({
-            ok: true,
-            state: 'connected',
-            label: 'OpenRouter terhubung',
-            detail: 'Dev middleware mock status',
-          }))();
-
+          const status = await getOpenRouterStatus(req.headers.origin);
           res.statusCode = status.ok ? 200 : 503;
           res.setHeader('Content-Type', 'application/json');
           res.end(JSON.stringify(status));
@@ -70,10 +61,12 @@ function openRouterDevPlugin() {
 
           try {
             const body = await readBody(req);
-            const result = await (async () => ({
-              content: `Dev mode: terima pesan: ${String(body?.message ?? '').slice(0, 200)}`,
-            }))();
-
+            const result = await sendOpenRouterMessage({
+              message: body.message,
+              history: Array.isArray(body.history) ? body.history : [],
+              sensorContext: body.sensorContext ?? null,
+              origin: req.headers.origin,
+            });
 
             res.statusCode = 200;
             res.setHeader('Content-Type', 'application/json');

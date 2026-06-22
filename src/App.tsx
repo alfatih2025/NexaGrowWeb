@@ -16,7 +16,8 @@ import { useWeather } from './hooks/useWeather';
 import { useSettings } from './hooks/useSettings';
 import { useAlerts } from './hooks/useAlerts';
 import { useMqttStatus } from './hooks/useMqttStatus';
-import { announceWebPresence } from './services/mqtt';
+import { getPlantHealthSummary } from './lib/plantPhase';
+
 import './index.css';
 
 function App() {
@@ -24,8 +25,8 @@ function App() {
   const { data: sensorData, history, loading: sensorLoading, refetch: refetchSensor } = useSensorData(5000);
   const { status: deviceStatus, refetch: refetchDevice } = useDeviceStatus(10000);
   const { settings } = useSettings();
-  const { data: weatherData, loading: weatherLoading } = useWeather();
-  const { createAlert, fetchAlerts, markAsRead } = useAlerts();
+  const { data: weatherData } = useWeather();
+  const { createAlert, fetchAlerts } = useAlerts();
   const mqttStatus = useMqttStatus();
   const lastAlertSignatureRef = useRef<string>('');
 
@@ -56,84 +57,53 @@ function App() {
     };
   }, [sensorData, mqttStatus.sensorSnapshot]);
 
+  const health = useMemo(() => {
+    if (!settings) return null;
+    return getPlantHealthSummary({
+      phase: settings.plant_phase,
+      soilMoisture: liveSensorData?.soil_moisture,
+      temperature: liveSensorData?.temperature,
+      weatherLabel: weatherData?.current.weather,
+      rainChance: weatherData?.current.rain_chance,
+      soilLow: settings.soil_threshold_low,
+      soilHigh: settings.soil_threshold_high,
+      soilCritical: settings.soil_threshold_critical,
+      tempLow: settings.temp_threshold_low,
+      tempHigh: settings.temp_threshold_high,
+    });
+  }, [settings, liveSensorData, weatherData]);
+
   useEffect(() => {
     const checkThresholds = async () => {
-      if (!liveSensorData || !settings) return;
+      if (!liveSensorData || !settings || !health) return;
 
-      const alertSet: Array<{
-        key: string;
-        type: string;
-        message: string;
-        severity: 'info' | 'warning' | 'danger';
-      }> = [];
-
-      if (liveSensorData.temperature > settings.temp_threshold_high) {
-        alertSet.push({
-          key: `temp-high-${Math.round(liveSensorData.temperature * 10)}`,
-          type: 'temperature',
-          message: `Suhu tinggi: ${liveSensorData.temperature}°C`,
-          severity: 'warning',
-        });
-      }
-
-      if (liveSensorData.temperature < settings.temp_threshold_low) {
-        alertSet.push({
-          key: `temp-low-${Math.round(liveSensorData.temperature * 10)}`,
-          type: 'temperature',
-          message: `Suhu terlalu rendah: ${liveSensorData.temperature}°C`,
-          severity: 'warning',
-        });
-      }
-
-      if (liveSensorData.soil_moisture < settings.soil_moisture_threshold) {
-        alertSet.push({
-          key: `soil-low-${Math.round(liveSensorData.soil_moisture * 10)}`,
-          type: 'soil',
-          message: `Kelembapan tanah rendah: ${liveSensorData.soil_moisture}%`,
-          severity: 'danger',
-        });
-      }
-
-      const rainChance = weatherData?.current.rain_chance ?? 0;
-      const weatherText = weatherData?.current.weather || '';
-      if (rainChance >= 60 || /hujan|rain|gerimis/i.test(weatherText)) {
-        alertSet.push({
-          key: `rain-${rainChance}-${weatherText}`,
-          type: 'weather',
-          message: `BMKG mengindikasikan potensi hujan (${rainChance}%). Pertimbangkan menunda penyiraman.`,
-          severity: 'warning',
-        });
-      }
-
-      if (alertSet.length === 0) {
+      const alerts = health.alerts.filter((item) => item.severity !== 'info' || item.type !== 'phase');
+      const signature = alerts.map((item) => item.key).join('|');
+      if (!signature) {
         lastAlertSignatureRef.current = '';
         return;
       }
 
-      const signature = alertSet.map((item) => item.key).join('|');
       if (signature === lastAlertSignatureRef.current) return;
       lastAlertSignatureRef.current = signature;
 
-      for (const item of alertSet) {
-        await createAlert(item.type, item.message, item.severity);
+      for (const item of alerts) {
+        await createAlert(item.type, item.message, item.severity, {
+          sendEmail: Boolean(item.sendEmail),
+          recipientEmail: settings.user_email,
+          metadata: item.metadata,
+        });
       }
-
-      await createAlert(
-        'ai',
-        'AI mendeteksi anomali sensor dan status cuaca. Silakan cek dashboard untuk rekomendasi tindakan.',
-        'info',
-      );
     };
 
     checkThresholds();
-  }, [liveSensorData, settings, weatherData, createAlert]);
+  }, [liveSensorData, settings, health, createAlert]);
 
   const handleRefresh = async () => {
     await Promise.all([
       refetchSensor(),
       refetchDevice(),
       fetchAlerts(),
-      announceWebPresence('online'),
     ]);
   };
 
@@ -144,16 +114,15 @@ function App() {
           <Dashboard
             sensorData={liveSensorData}
             deviceStatus={deviceStatus}
-            weatherData={weatherData}
-            weatherLoading={weatherLoading}
             settings={settings}
             mqttStatus={mqttStatus}
+            weatherData={weatherData}
           />
         );
       case 'monitoring':
         return <Monitoring history={history} />;
       case 'chat':
-        return <ChatPage />;
+        return <ChatPage sensorData={liveSensorData} settings={settings} />;
       case 'control':
         return <ControlPage sensorData={liveSensorData} />;
       case 'weather':
@@ -169,10 +138,9 @@ function App() {
           <Dashboard
             sensorData={liveSensorData}
             deviceStatus={deviceStatus}
-            weatherData={weatherData}
-            weatherLoading={weatherLoading}
             settings={settings}
             mqttStatus={mqttStatus}
+            weatherData={weatherData}
           />
         );
     }
@@ -207,16 +175,15 @@ function App() {
           <Header
             deviceStatus={deviceStatus}
             mqttStatus={mqttStatus}
-            onRefresh={handleRefresh}
             currentPage={currentPage}
           />
 
           <main className="flex-1 p-6 overflow-auto">
             <motion.div
               key={currentPage}
-              initial={{ opacity: 0, y: 10 }}
+              initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3 }}
+              transition={{ duration: 0.2 }}
             >
               {renderPage()}
             </motion.div>

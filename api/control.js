@@ -36,48 +36,37 @@ const COMMAND_MAP = {
   }),
 };
 
-function json(statusCode, body) {
-  return {
-    statusCode,
-    headers: {
-      'Content-Type': 'application/json; charset=utf-8',
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-api-key',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Cache-Control': 'no-store',
-    },
-    body: JSON.stringify(body),
-  };
-}
-
-export async function handler(event) {
-  if (event.httpMethod === 'OPTIONS') return json(204, {});
-  if (!supabase) return json(500, { error: 'Supabase belum dikonfigurasi' });
+export default async function handler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key');
+  if (req.method === 'OPTIONS') return res.status(204).end();
+  if (!supabase) return res.status(500).json({ error: 'Supabase belum dikonfigurasi' });
 
   try {
-    if (event.httpMethod === 'GET') {
-      const limit = Math.min(Number(event.queryStringParameters?.limit ?? 50) || 50, 200);
+    if (req.method === 'GET') {
+      const { limit = 50 } = req.query;
       const { data, error } = await supabase
         .from('control_logs')
         .select('*')
         .order('executed_at', { ascending: false })
-        .limit(limit);
+        .limit(Math.min(Number(limit) || 50, 200));
 
       if (error) throw error;
-      return json(200, data || []);
+      return res.status(200).json(data || []);
     }
 
-    if (event.httpMethod === 'POST') {
-      if (!requireApiAuth(event)) return authError();
+    if (req.method === 'POST') {
+      if (!requireApiAuth(req, res)) return;
 
-      const body = event.body ? JSON.parse(event.body) : {};
+      const body = req.body || {};
       const action = String(body.action || '').trim();
       const device = String(body.device || 'ESP32_001').trim();
       const duration = body.duration ?? null;
       const data = body.data || null;
 
       if (!Object.keys(COMMAND_MAP).includes(action)) {
-        return json(400, { error: 'Invalid action' });
+        return res.status(400).json({ error: 'Invalid action' });
       }
 
       const now = new Date().toISOString();
@@ -105,7 +94,7 @@ export async function handler(event) {
         details: { action, device, duration, command_id: row.id },
       }).catch(() => {});
 
-      return json(200, {
+      return res.status(200).json({
         success: true,
         command_id: row.id,
         status: row.status,
@@ -117,8 +106,8 @@ export async function handler(event) {
       });
     }
 
-    return json(405, { error: 'Method not allowed' });
+    return res.status(405).json({ error: 'Method not allowed' });
   } catch (error) {
-    return json(500, { error: error instanceof Error ? error.message : 'Control error' });
+    return res.status(500).json({ error: error instanceof Error ? error.message : 'Control error' });
   }
 }

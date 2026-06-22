@@ -1,3 +1,4 @@
+import { requireApiAuth, authError } from './_auth.js';
 import supabase from './_supabase.js';
 import { sendOpenRouterMessage } from './_openrouter.js';
 
@@ -30,6 +31,9 @@ export async function handler(event) {
   if (event.httpMethod === 'OPTIONS') {
     return json(null, 204, {});
   }
+
+  const auth = requireApiAuth(event);
+  if (!auth.ok) return authError();
 
   try {
     if (event.httpMethod === 'GET') {

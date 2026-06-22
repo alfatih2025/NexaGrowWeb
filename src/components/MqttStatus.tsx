@@ -2,6 +2,11 @@ import { motion } from 'framer-motion';
 import { Wifi, AlertCircle, Activity } from 'lucide-react';
 import { useMqttStatus } from '../hooks/useMqttStatus';
 
+function formatOneDecimal(value: number | null | undefined) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return 'N/A';
+  return Number(value).toFixed(1);
+}
+
 export function MqttStatus() {
   const status = useMqttStatus();
   const sensor = status.sensorSnapshot;
@@ -18,18 +23,10 @@ export function MqttStatus() {
           <h4 className="font-semibold text-gray-800 text-sm">Status Koneksi</h4>
         </div>
         <div className="flex gap-2">
-          <div className={`px-3 py-1 rounded-full text-xs font-medium ${
-            status.systemOnline
-              ? 'bg-emerald-100 text-emerald-700'
-              : 'bg-red-100 text-red-700'
-          }`}>
+          <div className={`px-3 py-1 rounded-full text-xs font-medium ${status.systemOnline ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
             Sistem: {status.systemOnline ? '🟢 Online' : '🔴 Offline'}
           </div>
-          <div className={`px-3 py-1 rounded-full text-xs font-medium ${
-            status.mqttConnected
-              ? 'bg-blue-100 text-blue-700'
-              : 'bg-amber-100 text-amber-700'
-          }`}>
+          <div className={`px-3 py-1 rounded-full text-xs font-medium ${status.mqttConnected ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'}`}>
             MQTT: {status.mqttConnected ? '🟢 Connected' : '🔴 Disconnected'}
           </div>
         </div>
@@ -38,7 +35,9 @@ export function MqttStatus() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
         <div className="p-2 bg-gray-50 rounded">
           <p className="text-gray-500">Broker</p>
-          <p className="font-mono text-xs truncate text-gray-700">{status.brokerUrl.split('//')[1]?.split(':')[0] || 'N/A'}</p>
+          <p className="font-mono text-xs truncate text-gray-700">
+            {status.brokerUrl.split('//')[1]?.split(':')[0] || 'N/A'}
+          </p>
         </div>
 
         <div className="p-2 bg-gray-50 rounded">
@@ -73,20 +72,43 @@ export function MqttStatus() {
         <div className="p-2 bg-gray-50 rounded">
           <p className="text-gray-500">Suhu</p>
           <p className="font-semibold text-gray-700">
-            {sensor?.temperature ?? 'N/A'}{sensor?.temperature != null ? '°C' : ''}
+            {formatOneDecimal(sensor?.temperature)}{sensor?.temperature != null ? '°C' : ''}
           </p>
         </div>
         <div className="p-2 bg-gray-50 rounded">
           <p className="text-gray-500">Soil</p>
           <p className="font-semibold text-gray-700">
-            {sensor?.soil_moisture ?? 'N/A'}{sensor?.soil_moisture != null ? '%' : ''}
+            {formatOneDecimal(sensor?.soil_moisture)}{sensor?.soil_moisture != null ? '%' : ''}
           </p>
         </div>
         <div className="p-2 bg-gray-50 rounded">
-          <p className="text-gray-500">Lampu / Pompa</p>
+          <p className="text-gray-500">Pompa / Lampu</p>
           <p className="font-semibold text-gray-700">
-            {sensor ? `${sensor.led_status ? 'Lampu ON' : 'Lampu OFF'} / ${sensor.pump_status ? 'Pompa ON' : 'Pompa OFF'}` : 'N/A'}
+            {sensor ? `${sensor.pump_status ? 'Pompa ON' : 'Pompa OFF'} / ${sensor.led_status ? 'Lampu ON' : 'Lampu OFF'}` : 'N/A'}
           </p>
+        </div>
+      </div>
+
+      <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+        <div className="p-2 bg-gray-50 rounded">
+          <p className="text-gray-500">Jadwal</p>
+          <p className="font-semibold text-gray-700">
+            {sensor?.schedule_enabled ? 'Aktif' : 'Nonaktif'}
+          </p>
+        </div>
+        <div className="p-2 bg-gray-50 rounded">
+          <p className="text-gray-500">Jam Siram</p>
+          <p className="font-semibold text-gray-700">{sensor?.watering_time || 'N/A'}</p>
+        </div>
+        <div className="p-2 bg-gray-50 rounded">
+          <p className="text-gray-500">Durasi</p>
+          <p className="font-semibold text-gray-700">
+            {sensor?.watering_duration != null ? `${sensor.watering_duration} detik` : 'N/A'}
+          </p>
+        </div>
+        <div className="p-2 bg-gray-50 rounded">
+          <p className="text-gray-500">Device</p>
+          <p className="font-semibold text-gray-700 truncate">{sensor?.device_id ?? 'N/A'}</p>
         </div>
       </div>
 

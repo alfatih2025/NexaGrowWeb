@@ -168,7 +168,7 @@ export function ControlPanel({ sensorData }: ControlPanelProps) {
 
         <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
           <p className="text-sm text-blue-800">
-            <strong>💡 Tips:</strong> Lampu dikontrol melalui MQTT. Pastikan ESP32 subscribe ke topic{' '}
+            <strong>💡 Tips:</strong> Lampu dari web dikirim ke ESP32 lalu diteruskan ke Arduino Nano. Pastikan ESP32 subscribe ke topic{' '}
             <code className="bg-blue-100 px-2 py-1 rounded text-xs">sproutai/lampu/cmd</code>
           </p>
         </div>

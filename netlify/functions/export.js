@@ -1,78 +1,101 @@
 import supabase from './_supabase.js';
+import { requireApiAuth, authError } from './_auth.js';
 
-function json(statusCode, body, headers = {}) {
+function csvEscape(value) {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'object') return `"${JSON.stringify(value).replace(/"/g, '""')}"`;
+  const stringValue = String(value);
+  return /[",\n\r]/.test(stringValue)
+    ? `"${stringValue.replace(/"/g, '""')}"`
+    : stringValue;
+}
+
+function json(statusCode, body) {
   return {
     statusCode,
     headers: {
+      'Content-Type': 'application/json; charset=utf-8',
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-api-key',
       'Access-Control-Allow-Methods': 'GET, OPTIONS',
       'Cache-Control': 'no-store',
-      ...headers,
     },
-    body: typeof body === 'string' ? body : JSON.stringify(body),
+    body: JSON.stringify(body),
   };
-}
-
-function escapeCsvValue(value) {
-  if (value === null || value === undefined) return '';
-  const text = typeof value === 'object' ? JSON.stringify(value) : String(value);
-  return `"${text.replace(/"/g, '""')}"`;
-}
-
-function toCsv(rows) {
-  if (!rows.length) return '';
-  const headers = Object.keys(rows[0]);
-  const lines = [headers.join(',')];
-  for (const row of rows) {
-    lines.push(headers.map((key) => escapeCsvValue(row[key])).join(','));
-  }
-  return lines.join('
-');
 }
 
 export async function handler(event) {
   if (event.httpMethod === 'OPTIONS') return json(204, {});
-  if (event.httpMethod !== 'GET') return json(405, { error: 'Method not allowed' });
-  if (!supabase) return json(200, []);
+  if (!supabase) return json(500, { error: 'Supabase belum dikonfigurasi' });
 
   try {
-    const type = event.queryStringParameters?.type || 'sensor';
-    const format = event.queryStringParameters?.format || 'csv';
-    const start = event.queryStringParameters?.start || null;
-    const end = event.queryStringParameters?.end || null;
+    if (event.httpMethod === 'GET') {
+      if (!requireApiAuth(event)) return authError();
 
-    let query;
-    if (type === 'sensor') {
-      query = supabase.from('sensor_data').select('*').order('created_at', { ascending: false }).limit(1000);
-      if (start) query = query.gte('created_at', start);
-      if (end) query = query.lte('created_at', end);
-    } else if (type === 'logs') {
-      query = supabase.from('activity_logs').select('*').order('created_at', { ascending: false }).limit(1000);
-    } else if (type === 'control') {
-      query = supabase.from('control_logs').select('*').order('executed_at', { ascending: false }).limit(1000);
-    } else {
-      query = supabase.from('activity_logs').select('*').order('created_at', { ascending: false }).limit(1000);
+      const type = event.queryStringParameters?.type || 'sensor';
+      const format = event.queryStringParameters?.format || 'csv';
+      const start = event.queryStringParameters?.start;
+      const end = event.queryStringParameters?.end;
+
+      let data = [];
+      let error = null;
+
+      if (type === 'sensor') {
+        let query = supabase
+          .from('sensor_data')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (start) query = query.gte('created_at', start);
+        if (end) query = query.lte('created_at', end);
+
+        const result = await query.limit(1000);
+        data = result.data || [];
+        error = result.error;
+      } else if (type === 'logs') {
+        const result = await supabase
+          .from('activity_logs')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(1000);
+        data = result.data || [];
+        error = result.error;
+      } else if (type === 'control') {
+        const result = await supabase
+          .from('control_logs')
+          .select('*')
+          .order('executed_at', { ascending: false })
+          .limit(1000);
+        data = result.data || [];
+        error = result.error;
+      }
+
+      if (error) throw error;
+
+      if (format === 'csv') {
+        const headers = Object.keys(data[0] || {});
+        const rows = data.map((row) => headers.map((key) => csvEscape(row[key])).join(','));
+        const csv = [headers.join(','), ...rows].join('\n');
+
+        return {
+          statusCode: 200,
+          headers: {
+            'Content-Type': 'text/csv; charset=utf-8',
+            'Content-Disposition': `attachment; filename="${type}_export_${new Date().toISOString().split('T')[0]}.csv"`,
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-api-key',
+            'Access-Control-Allow-Methods': 'GET, OPTIONS',
+            'Cache-Control': 'no-store',
+          },
+          body: csv,
+        };
+      }
+
+      return json(200, data);
     }
 
-    const { data, error } = await query;
-    if (error) throw error;
-    const rows = Array.isArray(data) ? data : [];
-
-    if (format === 'json') {
-      return json(200, rows);
-    }
-
-    const csv = toCsv(rows);
-    return json(
-      200,
-      csv,
-      {
-        'Content-Type': 'text/csv; charset=utf-8',
-        'Content-Disposition': `attachment; filename="${type}_export_${new Date().toISOString().split('T')[0]}.csv"`,
-      },
-    );
+    return json(405, { error: 'Method not allowed' });
   } catch (error) {
-    return json(500, { error: error instanceof Error ? error.message : 'Export API error' });
+    return json(500, { error: error instanceof Error ? error.message : 'Export error' });
   }
 }

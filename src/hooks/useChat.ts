@@ -1,8 +1,11 @@
+import { buildApiHeaders } from '../lib/apiAuth';
 import { useState, useEffect, useCallback } from 'react';
 import {
   checkOpenRouterConnection,
+  sendMessageToOpenRouter,
   type OpenRouterStatus,
   type OpenRouterChatMessage,
+  type SensorSnapshotContext,
 } from '../services/openrouter';
 
 export interface ChatMessage {
@@ -22,7 +25,7 @@ function readLocalMessages(): ChatMessage[] {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as ChatMessage[]) : [];
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
   }
@@ -39,7 +42,7 @@ function createMessage(role: 'user' | 'assistant', content: string): ChatMessage
 }
 
 async function fetchApiMessages(): Promise<ChatMessage[]> {
-  const response = await fetch('/api/chat?limit=50');
+  const response = await fetch('/api/chat', { headers: buildApiHeaders() });
   if (!response.ok) {
     throw new Error(`Chat API tidak merespons (${response.status})`);
   }
@@ -57,6 +60,43 @@ function toOpenRouterHistory(messages: ChatMessage[]): OpenRouterChatMessage[] {
     role: item.role,
     content: item.content,
   }));
+}
+
+function normalizeSensorContext(sensorContext?: Partial<SensorSnapshotContext> | null): Partial<SensorSnapshotContext> | null {
+  if (!sensorContext || typeof sensorContext !== 'object') return null;
+
+  return {
+    device_id: typeof sensorContext.device_id === 'string' ? sensorContext.device_id : undefined,
+    temperature: typeof sensorContext.temperature === 'number' ? sensorContext.temperature : null,
+    humidity: typeof sensorContext.humidity === 'number' ? sensorContext.humidity : null,
+    soil_moisture: typeof sensorContext.soil_moisture === 'number' ? sensorContext.soil_moisture : null,
+    rain: typeof sensorContext.rain === 'number' ? sensorContext.rain : null,
+    score: typeof sensorContext.score === 'number' ? sensorContext.score : null,
+    soil_score: typeof sensorContext.soil_score === 'number' ? sensorContext.soil_score : null,
+    vdp_score: typeof sensorContext.vdp_score === 'number' ? sensorContext.vdp_score : null,
+    rain_score: typeof sensorContext.rain_score === 'number' ? sensorContext.rain_score : null,
+    vpd: typeof sensorContext.vpd === 'number' ? sensorContext.vpd : null,
+    duration_estimate: typeof sensorContext.duration_estimate === 'number' ? sensorContext.duration_estimate : null,
+    pump_status: typeof sensorContext.pump_status === 'boolean' ? sensorContext.pump_status : undefined,
+    led_status: typeof sensorContext.led_status === 'boolean' ? sensorContext.led_status : undefined,
+    device_mode: sensorContext.device_mode === 'auto' || sensorContext.device_mode === 'manual' ? sensorContext.device_mode : null,
+    wifi_status: typeof sensorContext.wifi_status === 'string' ? sensorContext.wifi_status : null,
+    threshold_kritis: typeof sensorContext.threshold_kritis === 'number' ? sensorContext.threshold_kritis : null,
+    threshold_atas: typeof sensorContext.threshold_atas === 'number' ? sensorContext.threshold_atas : null,
+    threshold_bawah: typeof sensorContext.threshold_bawah === 'number' ? sensorContext.threshold_bawah : null,
+    watering_time: typeof sensorContext.watering_time === 'string' ? sensorContext.watering_time : null,
+    watering_duration: typeof sensorContext.watering_duration === 'number' ? sensorContext.watering_duration : null,
+    schedule_enabled: typeof sensorContext.schedule_enabled === 'boolean' ? sensorContext.schedule_enabled : undefined,
+    created_at: typeof sensorContext.created_at === 'string' ? sensorContext.created_at : null,
+    updatedAt: typeof sensorContext.updatedAt === 'string' ? sensorContext.updatedAt : null,
+    sourceTopic: typeof sensorContext.sourceTopic === 'string' ? sensorContext.sourceTopic : null,
+    plant_phase: sensorContext.plant_phase === 'generatif' || sensorContext.plant_phase === 'vegetatif' ? sensorContext.plant_phase : null,
+    soil_threshold_low: typeof sensorContext.soil_threshold_low === 'number' ? sensorContext.soil_threshold_low : null,
+    soil_threshold_high: typeof sensorContext.soil_threshold_high === 'number' ? sensorContext.soil_threshold_high : null,
+    soil_threshold_critical: typeof sensorContext.soil_threshold_critical === 'number' ? sensorContext.soil_threshold_critical : null,
+    temp_threshold_low: typeof sensorContext.temp_threshold_low === 'number' ? sensorContext.temp_threshold_low : null,
+    temp_threshold_high: typeof sensorContext.temp_threshold_high === 'number' ? sensorContext.temp_threshold_high : null,
+  };
 }
 
 export function useChat() {
@@ -98,7 +138,7 @@ export function useChat() {
   }, [persistMessages]);
 
   const sendMessage = useCallback(
-    async (message: string) => {
+    async (message: string, sensorContext?: Partial<SensorSnapshotContext> | null) => {
       const trimmedMessage = message.trim();
       if (!trimmedMessage) return;
 
@@ -110,34 +150,22 @@ export function useChat() {
       persistMessages(optimisticMessages);
 
       try {
-        const response = await fetch('/api/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            message: trimmedMessage,
-            user_id: 'user_001',
-            history: toOpenRouterHistory(optimisticMessages.slice(-8)),
-          }),
-        });
+        const assistantReply = await sendMessageToOpenRouter(
+          trimmedMessage,
+          toOpenRouterHistory(optimisticMessages),
+          normalizeSensorContext(sensorContext),
+        );
 
-        const payload = await response.json().catch(() => null);
-        if (!response.ok) {
-          throw new Error(payload?.error || `Chat API gagal (${response.status})`);
-        }
+        const assistantMessage = createMessage(
+          'assistant',
+          typeof assistantReply === 'string' ? assistantReply : 'Maaf, jawaban AI kosong.',
+        );
 
-        const assistantReply =
-          payload?.reply ||
-          payload?.content ||
-          payload?.assistant_message?.content ||
-          'Maaf, jawaban AI kosong.';
-
-        const assistantMessage = createMessage('assistant', assistantReply);
         persistMessages([...optimisticMessages, assistantMessage]);
-
         setConnectionStatus({
           state: 'connected',
-          label: 'OpenRouter aktif via backend',
-          detail: 'Respons AI diterima dari endpoint /api/chat.',
+          label: 'OpenRouter aktif via API',
+          detail: 'Respons AI diterima dari endpoint /api/openrouter-chat.',
           checkedAt: new Date().toISOString(),
         });
       } catch (err) {

@@ -1,4 +1,5 @@
 import supabase from './_supabase.js';
+import { requireApiAuth, authError } from './_auth.js';
 
 function json(statusCode, body) {
   return {
@@ -6,7 +7,7 @@ function json(statusCode, body) {
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-api-key',
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
       'Cache-Control': 'no-store',
     },
@@ -16,7 +17,7 @@ function json(statusCode, body) {
 
 export async function handler(event) {
   if (event.httpMethod === 'OPTIONS') return json(204, {});
-  if (!supabase) return json(200, []);
+  if (!supabase) return json(500, { error: 'Supabase belum dikonfigurasi' });
 
   try {
     if (event.httpMethod === 'GET') {
@@ -28,14 +29,18 @@ export async function handler(event) {
         .limit(50);
 
       if (unread) query = query.eq('read', false);
+
       const { data, error } = await query;
       if (error) throw error;
       return json(200, data || []);
     }
 
     if (event.httpMethod === 'POST') {
+      if (!requireApiAuth(event)) return authError();
+
       const body = event.body ? JSON.parse(event.body) : {};
       const { type, message, severity = 'info', read = false } = body;
+
       const { data, error } = await supabase
         .from('alerts')
         .insert({
@@ -45,7 +50,7 @@ export async function handler(event) {
           read,
           created_at: new Date().toISOString(),
         })
-        .select('*')
+        .select()
         .single();
 
       if (error) throw error;
@@ -54,6 +59,6 @@ export async function handler(event) {
 
     return json(405, { error: 'Method not allowed' });
   } catch (error) {
-    return json(500, { error: error instanceof Error ? error.message : 'Alerts API error' });
+    return json(500, { error: error instanceof Error ? error.message : 'Alerts error' });
   }
 }

@@ -56,11 +56,11 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
       </AnimatePresence>
 
       <motion.aside
-        initial={{ x: -280 }}
-        animate={{ x: mobileOpen ? 0 : -280 }}
-        className={`fixed lg:translate-x-0 lg:static inset-y-0 left-0 w-72 bg-gradient-to-b from-emerald-900 via-emerald-800 to-teal-900 text-white z-50 shadow-2xl transition-transform duration-300`}
+        initial={{ x: -256 }}
+        animate={{ x: mobileOpen ? 0 : -256 }}
+        className={`fixed lg:translate-x-0 lg:static inset-y-0 left-0 w-64 bg-gradient-to-b from-emerald-900 via-emerald-800 to-teal-900 text-white z-50 shadow-2xl transition-transform duration-300`}
       >
-        <div className="flex items-center justify-between p-6 border-b border-emerald-700/50">
+        <div className="flex items-center justify-between p-5 border-b border-emerald-700/50">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-gradient-to-br from-emerald-400 to-teal-500 rounded-xl flex items-center justify-center shadow-lg">
               <Sprout className="w-6 h-6 text-white" />
@@ -75,7 +75,7 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
           </button>
         </div>
 
-        <nav className="p-4 space-y-1">
+        <nav className="p-3.5 space-y-1.5">
           {menuItems.map((item) => {
             const Icon = item.icon;
             const isActive = currentPage === item.id;
@@ -89,13 +89,13 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
                   onPageChange(item.id);
                   setMobileOpen(false);
                 }}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
+                className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-all ${
                   isActive 
                     ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-lg' 
                     : 'text-emerald-100 hover:bg-emerald-800/50'
                 }`}
               >
-                <Icon size={20} className={isActive ? 'text-emerald-200' : 'text-emerald-400'} />
+                <Icon size={19} className={isActive ? 'text-emerald-200' : 'text-emerald-400'} />
                 <span className="font-medium">{item.label}</span>
                 {isActive && (
                   <motion.div
