@@ -1,18 +1,19 @@
 import { useState } from 'react';
-import { 
-  LayoutDashboard, 
-  Activity, 
-  MessageSquare, 
-  Settings, 
+import {
+  LayoutDashboard,
+  Activity,
+  MessageSquare,
+  Settings,
   CloudSun,
   FileText,
   Menu,
   X,
   Sprout,
   Zap,
-  BookOpen
+  BookOpen,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import logo from '../assets/nexagrow-logo.png';
 
 interface SidebarProps {
   currentPage: string;
@@ -38,9 +39,10 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
       <motion.button
         whileTap={{ scale: 0.95 }}
         onClick={() => setMobileOpen(true)}
-        className="fixed top-4 left-4 z-50 lg:hidden bg-emerald-600 text-white p-3 rounded-xl shadow-lg"
+        className="fixed top-4 left-4 z-50 lg:hidden inline-flex items-center justify-center rounded-2xl bg-emerald-600 text-white p-3 shadow-lg shadow-emerald-900/20"
+        aria-label="Buka menu"
       >
-        <Menu size={24} />
+        <Menu size={22} />
       </motion.button>
 
       <AnimatePresence>
@@ -50,36 +52,42 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={() => setMobileOpen(false)}
-            className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+            className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm lg:hidden"
           />
         )}
       </AnimatePresence>
 
       <motion.aside
-        initial={{ x: -256 }}
-        animate={{ x: mobileOpen ? 0 : -256 }}
-        className={`fixed lg:translate-x-0 lg:static inset-y-0 left-0 w-64 bg-gradient-to-b from-emerald-900 via-emerald-800 to-teal-900 text-white z-50 shadow-2xl transition-transform duration-300`}
+        initial={false}
+        className={`fixed inset-y-0 left-0 z-50 w-72 border-r border-white/10 bg-slate-950 text-white shadow-2xl transition-transform duration-300 lg:static lg:translate-x-0 ${
+          mobileOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
       >
-        <div className="flex items-center justify-between p-5 border-b border-emerald-700/50">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-emerald-400 to-teal-500 rounded-xl flex items-center justify-center shadow-lg">
-              <Sprout className="w-6 h-6 text-white" />
+        <div className="flex items-center justify-between gap-3 border-b border-white/10 p-5">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-2xl bg-white/10 ring-1 ring-white/10">
+              <img src={logo} alt="NexaGrow" className="h-full w-full object-cover" />
             </div>
-            <div>
-              <h1 className="text-xl font-bold">NexaGrow</h1>
-              <p className="text-xs text-emerald-300">Intelligent Plant Monitoring & Water Efficiency</p>
+            <div className="min-w-0">
+              <h1 className="truncate text-lg font-bold leading-tight">NexaGrow</h1>
+              <p className="truncate text-[11px] text-emerald-200/80">Smart Plant Monitoring</p>
             </div>
           </div>
-          <button onClick={() => setMobileOpen(false)} className="lg:hidden p-2 hover:bg-emerald-800/50 rounded-lg">
-            <X size={20} />
+
+          <button
+            onClick={() => setMobileOpen(false)}
+            className="rounded-xl p-2 text-white/70 transition hover:bg-white/10 hover:text-white lg:hidden"
+            aria-label="Tutup menu"
+          >
+            <X size={18} />
           </button>
         </div>
 
-        <nav className="p-3.5 space-y-1.5">
+        <nav className="space-y-1 p-3">
           {menuItems.map((item) => {
             const Icon = item.icon;
             const isActive = currentPage === item.id;
-            
+
             return (
               <motion.button
                 key={item.id}
@@ -89,33 +97,33 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
                   onPageChange(item.id);
                   setMobileOpen(false);
                 }}
-                className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-all ${
-                  isActive 
-                    ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-lg' 
-                    : 'text-emerald-100 hover:bg-emerald-800/50'
+                className={`flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left transition-all ${
+                  isActive
+                    ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-900/20'
+                    : 'text-slate-300 hover:bg-white/10 hover:text-white'
                 }`}
               >
-                <Icon size={19} className={isActive ? 'text-emerald-200' : 'text-emerald-400'} />
+                <Icon size={18} className={isActive ? 'text-white' : 'text-emerald-300'} />
                 <span className="font-medium">{item.label}</span>
-                {isActive && (
-                  <motion.div
-                    layoutId="activeIndicator"
-                    className="ml-auto w-2 h-2 bg-white rounded-full"
-                  />
-                )}
               </motion.button>
             );
           })}
         </nav>
 
-        <div className="absolute bottom-0 left-0 right-0 p-4">
-          <div className="bg-emerald-800/50 backdrop-blur-sm rounded-xl p-4 border border-emerald-700/50">
-            <p className="text-xs text-emerald-300 mb-1">Versi</p>
-            <p className="text-sm font-semibold">NexaGrow v1.0.0</p>
-            <p className="text-xs text-emerald-400 mt-1">© 2025 NexaGrow</p>
+        <div className="mt-auto p-4">
+          <div className="rounded-3xl border border-white/10 bg-white/5 p-4 text-sm text-slate-300">
+            <div className="mb-2 flex items-center gap-2 text-emerald-300">
+              <Sprout size={16} />
+              <span className="font-semibold">NexaGrow AI</span>
+            </div>
+            <p className="text-xs leading-relaxed text-slate-300/80">
+              Monitoring sensor, jadwal penyiraman, dan analisis tanaman terhubung langsung ke ESP32 serta Arduino Nano.
+            </p>
           </div>
         </div>
       </motion.aside>
+
+      {mobileOpen && <div className="fixed inset-y-0 left-72 z-40 hidden lg:block" />}
     </>
   );
 }

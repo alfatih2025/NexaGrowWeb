@@ -1,4 +1,5 @@
 import { buildApiHeaders } from '../lib/apiAuth';
+import { getArduinoFormulaReference } from '../lib/arduinoFormula';
 
 const OPENROUTER_CHAT_ENDPOINT = '/api/openrouter-chat';
 const OPENROUTER_STATUS_ENDPOINT = '/api/openrouter-status';

@@ -68,3 +68,75 @@
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
 }
+
+
+@layer utilities {
+  html.dark body {
+    background: #020617;
+    color: #e2e8f0;
+  }
+
+  html.dark ::selection {
+    background: rgba(16, 185, 129, 0.35);
+  }
+
+  html.dark .bg-white,
+  html.dark .bg-gray-50,
+  html.dark .bg-gray-100 {
+    background-color: #0f172a !important;
+  }
+
+  html.dark .bg-emerald-50 {
+    background-color: rgba(6, 78, 59, 0.35) !important;
+  }
+
+  html.dark .bg-blue-50 {
+    background-color: rgba(30, 64, 175, 0.25) !important;
+  }
+
+  html.dark .bg-amber-50 {
+    background-color: rgba(120, 53, 15, 0.28) !important;
+  }
+
+  html.dark .bg-red-50 {
+    background-color: rgba(127, 29, 29, 0.25) !important;
+  }
+
+  html.dark .text-gray-800,
+  html.dark .text-gray-900,
+  html.dark .text-slate-900 {
+    color: #e2e8f0 !important;
+  }
+
+  html.dark .text-gray-700,
+  html.dark .text-slate-700 {
+    color: #cbd5e1 !important;
+  }
+
+  html.dark .text-gray-600,
+  html.dark .text-gray-500,
+  html.dark .text-slate-600,
+  html.dark .text-slate-500 {
+    color: #94a3b8 !important;
+  }
+
+  html.dark .border-gray-100,
+  html.dark .border-gray-200,
+  html.dark .border-slate-200 {
+    border-color: #1e293b !important;
+  }
+
+  html.dark .shadow-sm,
+  html.dark .shadow-lg,
+  html.dark .shadow-xl {
+    box-shadow: 0 12px 30px rgba(2, 6, 23, 0.35) !important;
+  }
+
+  html.dark ::-webkit-scrollbar-track {
+    background: #0f172a;
+  }
+
+  html.dark ::-webkit-scrollbar-thumb {
+    background: #334155;
+  }
+}

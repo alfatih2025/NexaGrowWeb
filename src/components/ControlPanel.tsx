@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Power, Timer, Droplets, Settings2, Lightbulb} from 'lucide-react';
+import { Power, Timer, Droplets, Settings2, Clock3 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useControl } from '../hooks/useControl';
 import { SensorData } from '../hooks/useSensorData';
@@ -19,6 +19,13 @@ export function ControlPanel({ sensorData }: ControlPanelProps) {
     }
   }, [sensorData?.device_mode]);
 
+  const scheduleText = useMemo(() => {
+    if (!sensorData?.schedule_enabled) return 'Nonaktif';
+    if (!sensorData?.watering_time) return 'Aktif';
+    const duration = sensorData.watering_duration != null ? `${sensorData.watering_duration} detik` : 'durasi belum diatur';
+    return `Aktif • ${sensorData.watering_time} • ${duration}`;
+  }, [sensorData?.schedule_enabled, sensorData?.watering_time, sensorData?.watering_duration]);
+
   const handleCommand = async (action: string, duration?: number) => {
     try {
       await sendCommand(action, duration);
@@ -34,7 +41,7 @@ export function ControlPanel({ sensorData }: ControlPanelProps) {
     icon: Icon,
     label,
     variant = 'primary',
-    disabled = false
+    disabled = false,
   }: {
     onClick: () => void;
     icon: LucideIcon;
@@ -43,42 +50,41 @@ export function ControlPanel({ sensorData }: ControlPanelProps) {
     disabled?: boolean;
   }) => {
     const variants = {
-      primary: 'bg-blue-500 hover:bg-blue-600 shadow-blue-200',
+      primary: 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-200',
       danger: 'bg-red-500 hover:bg-red-600 shadow-red-200',
       warning: 'bg-amber-500 hover:bg-amber-600 shadow-amber-200',
-      success: 'bg-emerald-500 hover:bg-emerald-600 shadow-emerald-200',
-    };
+      success: 'bg-slate-700 hover:bg-slate-800 shadow-slate-200',
+    } as const;
 
     return (
       <motion.button
-        whileHover={{ scale: disabled ? 1 : 1.05 }}
-        whileTap={{ scale: disabled ? 1 : 0.95 }}
+        whileHover={{ scale: disabled ? 1 : 1.03 }}
+        whileTap={{ scale: disabled ? 1 : 0.97 }}
         onClick={onClick}
         disabled={disabled || loading}
         className={`${variants[variant]} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}
-          w-full flex items-center gap-3 px-5 py-4 rounded-xl text-white font-medium
-          shadow-lg transition-all`}
+          flex w-full items-center gap-3 rounded-2xl px-5 py-4 font-medium text-white shadow-lg transition-all`}
       >
-        <Icon size={22} />
+        <Icon size={20} />
         <span>{label}</span>
-        {loading && <motion.div className="ml-auto w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+        {loading && <motion.div className="ml-auto h-5 w-5 animate-spin rounded-full border-2 border-white/30 border-t-white" />}
       </motion.button>
     );
   };
 
   return (
     <div className="space-y-6">
-      <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-        <div className="flex items-center justify-between mb-6">
-          <h3 className="text-lg font-semibold text-gray-800">Mode Operasi</h3>
-          <div className="flex bg-gray-100 rounded-xl p-1">
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="mb-6 flex items-center justify-between gap-4">
+          <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Mode Operasi</h3>
+          <div className="flex rounded-2xl bg-slate-100 p-1 dark:bg-slate-800">
             <motion.button
               whileTap={{ scale: 0.98 }}
               onClick={() => handleCommand('mode_manual')}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+              className={`rounded-xl px-4 py-2 text-sm font-medium transition-all ${
                 activeMode === 'manual'
-                  ? 'bg-white text-emerald-600 shadow-sm'
-                  : 'text-gray-500 hover:text-gray-700'
+                  ? 'bg-white text-emerald-600 shadow-sm dark:bg-slate-950 dark:text-emerald-300'
+                  : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
               }`}
             >
               Manual
@@ -86,10 +92,10 @@ export function ControlPanel({ sensorData }: ControlPanelProps) {
             <motion.button
               whileTap={{ scale: 0.98 }}
               onClick={() => handleCommand('mode_auto')}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+              className={`rounded-xl px-4 py-2 text-sm font-medium transition-all ${
                 activeMode === 'auto'
-                  ? 'bg-white text-emerald-600 shadow-sm'
-                  : 'text-gray-500 hover:text-gray-700'
+                  ? 'bg-white text-emerald-600 shadow-sm dark:bg-slate-950 dark:text-emerald-300'
+                  : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
               }`}
             >
               Otomatis
@@ -97,45 +103,43 @@ export function ControlPanel({ sensorData }: ControlPanelProps) {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-4 mb-6">
-          <div className={`p-4 rounded-xl border-2 transition-all ${
+        <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div className={`rounded-2xl border-2 p-4 transition-all ${
             sensorData?.pump_status
-              ? 'bg-blue-50 border-blue-200'
-              : 'bg-gray-50 border-gray-200'
+              ? 'border-emerald-200 bg-emerald-50 dark:border-emerald-500/20 dark:bg-emerald-500/10'
+              : 'border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800/60'
           }`}>
             <div className="flex items-center gap-3">
-              <div className={`p-3 rounded-xl ${sensorData?.pump_status ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-500'}`}>
+              <div className={`rounded-2xl p-3 ${
+                sensorData?.pump_status ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-500 dark:bg-slate-700 dark:text-slate-300'
+              }`}>
                 <Droplets size={24} />
               </div>
               <div>
-                <p className="text-sm text-gray-500">Pompa Air</p>
-                <p className={`text-lg font-bold ${sensorData?.pump_status ? 'text-blue-600' : 'text-gray-400'}`}>
+                <p className="text-sm text-slate-500 dark:text-slate-400">Pompa Air</p>
+                <p className={`text-lg font-bold ${
+                  sensorData?.pump_status ? 'text-emerald-600 dark:text-emerald-300' : 'text-slate-400 dark:text-slate-300'
+                }`}>
                   {sensorData?.pump_status ? 'ON' : 'OFF'}
                 </p>
               </div>
             </div>
           </div>
 
-          <div className={`p-4 rounded-xl border-2 transition-all ${
-            sensorData?.led_status
-              ? 'bg-amber-50 border-amber-200'
-              : 'bg-gray-50 border-gray-200'
-          }`}>
+          <div className="rounded-2xl border-2 border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-800/60">
             <div className="flex items-center gap-3">
-              <div className={`p-3 rounded-xl ${sensorData?.led_status ? 'bg-yellow-500 text-white' : 'bg-gray-200 text-gray-500'}`}>
-                <Lightbulb size={24} />
+              <div className="rounded-2xl bg-slate-200 p-3 text-slate-500 dark:bg-slate-700 dark:text-slate-300">
+                <Clock3 size={24} />
               </div>
               <div>
-                <p className="text-sm text-gray-500">Lampu</p>
-                <p className={`text-lg font-bold ${sensorData?.led_status ? 'text-amber-600' : 'text-gray-400'}`}>
-                  {sensorData?.led_status ? 'ON' : 'OFF'}
-                </p>
+                <p className="text-sm text-slate-500 dark:text-slate-400">Jadwal Penyiraman</p>
+                <p className="text-lg font-bold text-slate-700 dark:text-slate-100">{scheduleText}</p>
               </div>
             </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <ControlButton
             onClick={() => handleCommand('pump_on')}
             icon={Droplets}
@@ -151,33 +155,29 @@ export function ControlPanel({ sensorData }: ControlPanelProps) {
             disabled={sensorData?.pump_status === false}
           />
           <ControlButton
-            onClick={() => handleCommand('led_on')}
-            icon={Lightbulb}
-            label="Nyalakan Lampu"
+            onClick={() => handleCommand('pump_10s', 10)}
+            icon={Timer}
+            label="Jalankan 10 Detik"
             variant="warning"
-            disabled={sensorData?.led_status === true}
+            disabled={sensorData?.pump_status === true}
           />
           <ControlButton
-            onClick={() => handleCommand('led_off')}
+            onClick={() => handleCommand('schedule_set', undefined)}
             icon={Settings2}
-            label="Matikan Lampu"
+            label="Sinkron Jadwal"
             variant="success"
-            disabled={sensorData?.led_status === false}
           />
         </div>
 
-        <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-          <p className="text-sm text-blue-800">
-            <strong>💡 Tips:</strong> Lampu dari web dikirim ke ESP32 lalu diteruskan ke Arduino Nano. Pastikan ESP32 subscribe ke topic{' '}
-            <code className="bg-blue-100 px-2 py-1 rounded text-xs">sproutai/lampu/cmd</code>
-          </p>
+        <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-200">
+          <strong>Sinkronisasi cepat:</strong> panel ini mengirim perintah langsung ke topic MQTT agar ESP32 dan Arduino menerima perubahan lebih responsif.
         </div>
       </div>
 
-      <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <div className="flex items-center gap-3 mb-4">
           <Timer className="w-5 h-5 text-emerald-600" />
-          <h3 className="text-lg font-semibold text-gray-800">Pompa Otomatis 10 Detik</h3>
+          <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Pompa Otomatis 10 Detik</h3>
         </div>
         <div className="grid grid-cols-1 gap-3">
           <ControlButton
@@ -188,8 +188,8 @@ export function ControlPanel({ sensorData }: ControlPanelProps) {
             disabled={sensorData?.pump_status === true}
           />
         </div>
-        <p className="mt-3 text-sm text-gray-500">
-          Mode otomatis akan aktif di ESP32. Saat kelembapan tanah rendah, ESP32 akan menyalakan pompa secara mandiri.
+        <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
+          Saat kelembapan tanah rendah, ESP32 akan menyalakan pompa secara mandiri sesuai rumus Arduino Nano.
         </p>
       </div>
     </div>

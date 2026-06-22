@@ -7,9 +7,10 @@ export interface DeviceStatus {
   device_id: string;
   pump_status: boolean;
   feeder_status: boolean;
+  led_status?: boolean;
 }
 
-export function useDeviceStatus(pollInterval = 10000) {
+export function useDeviceStatus(pollInterval = 5000) {
   const [status, setStatus] = useState<DeviceStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

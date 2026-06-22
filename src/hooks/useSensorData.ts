@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { getSensorSnapshot, subscribeMqttStatus, type MqttSensorSnapshot } from '../services/mqtt';
 
 export interface SensorData {
@@ -72,7 +72,6 @@ function buildFallbackData(): SensorData {
 
 function normalizeSensorDataRow(row: any): SensorData | null {
   if (!row || typeof row !== 'object') return null;
-
   const fallback = buildFallbackData();
 
   return {
@@ -133,22 +132,23 @@ function mergeSensorData(base: SensorData | null, live: MqttSensorSnapshot | nul
   };
 }
 
-export function useSensorData(pollInterval = 5000) {
+export function useSensorData(pollInterval = 3000) {
   const [data, setData] = useState<SensorData | null>(null);
   const [history, setHistory] = useState<SensorData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const lastDataRef = useRef<SensorData | null>(null);
 
   const mergeWithLiveSnapshot = useCallback((next: SensorData | null) => {
     const live = getSensorSnapshot();
-    return mergeSensorData(next, live);
+    return mergeSensorData(next ?? lastDataRef.current, live);
   }, []);
 
   const fetchData = useCallback(async () => {
     try {
       const [latestRes, historyRes] = await Promise.all([
         fetch('/api/sensor?latest=true'),
-        fetch('/api/sensor?limit=50'),
+        fetch('/api/sensor?limit=60'),
       ]);
 
       if (!latestRes.ok || !historyRes.ok) {
@@ -158,12 +158,20 @@ export function useSensorData(pollInterval = 5000) {
       const latest = await latestRes.json().catch(() => null);
       const historyData = await historyRes.json().catch(() => []);
 
-      setData(mergeWithLiveSnapshot(normalizeSensorDataRow(latest)));
+      const normalizedLatest = mergeWithLiveSnapshot(normalizeSensorDataRow(latest));
+      if (normalizedLatest) {
+        lastDataRef.current = normalizedLatest;
+        setData(normalizedLatest);
+      }
+
       setHistory(Array.isArray(historyData) ? historyData.map(normalizeSensorDataRow).filter(Boolean) as SensorData[] : []);
       setError(null);
     } catch (err) {
-      const fallback = mergeWithLiveSnapshot(null);
-      if (fallback) setData(fallback);
+      const fallback = mergeWithLiveSnapshot(lastDataRef.current);
+      if (fallback) {
+        lastDataRef.current = fallback;
+        setData(fallback);
+      }
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setLoading(false);
@@ -180,7 +188,11 @@ export function useSensorData(pollInterval = 5000) {
     const unsubscribe = subscribeMqttStatus(() => {
       const live = getSensorSnapshot();
       if (!live) return;
-      setData((prev) => mergeSensorData(prev, live));
+      setData((prev) => {
+        const merged = mergeSensorData(prev ?? lastDataRef.current, live);
+        if (merged) lastDataRef.current = merged;
+        return merged;
+      });
     });
 
     return () => {

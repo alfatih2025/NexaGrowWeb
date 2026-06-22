@@ -4,6 +4,37 @@ import supabase from './_supabase.js';
 const OPENROUTER_API_KEY =
   process.env.OPENROUTER_API_KEY || process.env.VITE_OPENROUTER_API_KEY;
 
+
+const ARDUINO_FORMULA_REFERENCE = [
+  'RUMUS ARDUINO NANO YANG WAJIB DIIKUTI:',
+  '1) Soil moisture percent:',
+  '   moisture = constrain(mapFloat(rawSoil, SOIL_RAW_DRY, SOIL_RAW_WET, 0, 100), 0, 100)',
+  '   dengan kalibrasi default: SOIL_RAW_DRY = 830 dan SOIL_RAW_WET = 350',
+  '',
+  '2) Vapor Pressure Deficit (VPD):',
+  '   svp = 0.6108 * exp((17.27 * suhu) / (suhu + 237.3))',
+  '   avp = svp * (kelembapan_udara / 100)',
+  '   vpd = svp - avp',
+  '',
+  '3) Soil score:',
+  '   soilRange = atas - kritis',
+  '   skortanah = constrain(((atas - k_tanah) * 50) / soilRange, 0, 50)',
+  '',
+  '4) VPD score:',
+  '   skorvdp = constrain(mapFloat(vpd, 0.4, 2.0, 0, 30), 0, 30)',
+  '',
+  '5) Total score:',
+  '   skortotal = skortanah + skorvdp - skorhujan',
+  '',
+  '6) Estimasi durasi siram:',
+  '   durasi_total = round(max(0, 5 * (atas - k_tanah) / 100 * max(vpd, 0.5)))',
+  '',
+  '7) Logika relay:',
+  '   ON jika k_tanah <= kritis atau skortotal >= 60',
+  '   OFF jika k_tanah >= atas atau hujan >= 5 atau suhu <= 20',
+].join('\n');
+
+
 function buildSystemPrompt(latestSensor, settings = {}) {
   const phase = String(settings.plant_phase || settings.crop_mode || 'vegetatif').trim().toLowerCase() === 'generatif'
     ? 'generatif'
@@ -17,10 +48,11 @@ FOKUS:
 - Kelembapan Udara: ${latestSensor?.humidity ?? 70}%
 - Kelembapan Tanah: ${latestSensor?.soil_moisture ?? 60}%
 - Status Pompa: ${latestSensor?.pump_status ? 'MENYALA' : 'MATI'}
-- Status Lampu: ${latestSensor?.led_status ? 'MENYALA' : 'MATI'}
 - Jadwal Siram: ${latestSensor?.schedule_enabled === false ? 'NONAKTIF' : 'AKTIF'}
 - Jam Siram: ${latestSensor?.watering_time ?? '-'}
 - Durasi Siram: ${latestSensor?.watering_duration ?? '-'} detik
+
+Gunakan rumus pengolahan Arduino berikut tanpa mengganti konstanta kecuali pengguna meminta kalibrasi baru secara eksplisit.
 
 Jika user memberi prompt yang membahas iklim berbeda atau kondisi hipotetis lain, jawab sesuai skenario itu, bukan memaksa data sensor asli. Gunakan bahasa Indonesia yang ramah, singkat, dan akurat.`;
 }
@@ -35,7 +67,7 @@ function getStatusLevel(latestSensor, settings = {}) {
 }
 
 function generateDailyReport(latestSensor) {
-  return `📊 Laporan Harian:\n\n🌡️ Suhu: ${latestSensor?.temperature ?? 28}°C\n💧 Kelembapan Tanah: ${latestSensor?.soil_moisture ?? 60}%\n🔌 Pompa: ${latestSensor?.pump_status ? 'Aktif' : 'Nonaktif'}\n💡 Lampu: ${latestSensor?.led_status ? 'Aktif' : 'Nonaktif'}\n🕒 Jadwal Siram: ${latestSensor?.watering_time ?? '-'} (${latestSensor?.schedule_enabled === false ? 'Nonaktif' : 'Aktif'})\n\nSecara keseluruhan kondisi lahan ${getStatusLevel(latestSensor)}.`;
+  return `📊 Laporan Harian:\n\n🌡️ Suhu: ${latestSensor?.temperature ?? 28}°C\n💧 Kelembapan Tanah: ${latestSensor?.soil_moisture ?? 60}%\n🔌 Pompa: ${latestSensor?.pump_status ? 'Aktif' : 'Nonaktif'}\n🕒 Jadwal Siram: ${latestSensor?.watering_time ?? '-'} (${latestSensor?.schedule_enabled === false ? 'Nonaktif' : 'Aktif'})\n\nSecara keseluruhan kondisi lahan ${getStatusLevel(latestSensor)}.`;
 }
 
 export default async function handler(req, res) {
@@ -99,7 +131,7 @@ export default async function handler(req, res) {
           aiResponse = `✅ Kelembapan tanah ${soilMoisture}% masih cukup baik.`;
         }
       } else if (lowerMessage.includes('status') || lowerMessage.includes('sawah')) {
-        aiResponse = `📊 Status lahan:\n\n🌡️ Suhu: ${latestSensor?.temperature ?? 28}°C\n💧 Kelembapan Tanah: ${latestSensor?.soil_moisture ?? 60}%\n🔌 Pompa: ${latestSensor?.pump_status ? 'Aktif' : 'Nonaktif'}\n💡 Lampu: ${latestSensor?.led_status ? 'Aktif' : 'Nonaktif'}\n🕒 Jadwal Siram: ${latestSensor?.watering_time ?? '-'} (${latestSensor?.schedule_enabled === false ? 'Nonaktif' : 'Aktif'})\n\nSecara keseluruhan kondisi lahan ${getStatusLevel(latestSensor, latestSettings)}.`;
+        aiResponse = `📊 Status lahan:\n\n🌡️ Suhu: ${latestSensor?.temperature ?? 28}°C\n💧 Kelembapan Tanah: ${latestSensor?.soil_moisture ?? 60}%\n🔌 Pompa: ${latestSensor?.pump_status ? 'Aktif' : 'Nonaktif'}\n🕒 Jadwal Siram: ${latestSensor?.watering_time ?? '-'} (${latestSensor?.schedule_enabled === false ? 'Nonaktif' : 'Aktif'})\n\nSecara keseluruhan kondisi lahan ${getStatusLevel(latestSensor, latestSettings)}.`;
       } else if (lowerMessage.includes('lapor') || lowerMessage.includes('harian')) {
         aiResponse = generateDailyReport(latestSensor);
       } else {
@@ -114,7 +146,7 @@ export default async function handler(req, res) {
             body: JSON.stringify({
               model: process.env.OPENROUTER_MODEL || process.env.VITE_OPENROUTER_MODEL || 'openai/gpt-4o-mini',
               messages: [
-                { role: 'system', content: systemPrompt },
+                { role: 'system', content: systemPrompt + '\n\n' + ARDUINO_FORMULA_REFERENCE },
                 { role: 'user', content: message },
               ],
               temperature: 0.5,

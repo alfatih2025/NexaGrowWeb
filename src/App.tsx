@@ -17,25 +17,46 @@ import { useSettings } from './hooks/useSettings';
 import { useAlerts } from './hooks/useAlerts';
 import { useMqttStatus } from './hooks/useMqttStatus';
 import { getPlantHealthSummary } from './lib/plantPhase';
+import { getSensorHistorySnapshot } from './services/mqtt';
 
 import './index.css';
 
+type ThemeMode = 'light' | 'dark';
+
+const THEME_STORAGE_KEY = 'nexagrow-theme';
+
+function readStoredTheme(): ThemeMode {
+  if (typeof window === 'undefined') return 'light';
+  const raw = window.localStorage.getItem(THEME_STORAGE_KEY);
+  return raw === 'dark' ? 'dark' : 'light';
+}
+
 function App() {
   const [currentPage, setCurrentPage] = useState('dashboard');
-  const { data: sensorData, history, loading: sensorLoading, refetch: refetchSensor } = useSensorData(5000);
-  const { status: deviceStatus, refetch: refetchDevice } = useDeviceStatus(10000);
+  const [theme, setTheme] = useState<ThemeMode>(readStoredTheme);
+  const { data: sensorData, history, loading: sensorLoading, refetch: refetchSensor } = useSensorData(3000);
+  const { status: deviceStatus, refetch: refetchDevice } = useDeviceStatus(5000);
   const { settings } = useSettings();
   const { data: weatherData } = useWeather();
   const { createAlert, fetchAlerts } = useAlerts();
   const mqttStatus = useMqttStatus();
   const lastAlertSignatureRef = useRef<string>('');
 
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.toggle('dark', theme === 'dark');
+    window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+  }, [theme]);
+
+  const toggleTheme = () => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
+
   const liveSensorData = useMemo(() => {
     const live = mqttStatus.sensorSnapshot;
-    if (!sensorData && !live) return null;
+    const fallback = sensorData ?? null;
+    if (!fallback && !live) return null;
 
     return {
-      ...(sensorData ?? {
+      ...(fallback ?? {
         device_id: 'ESP32_001',
         temperature: 0,
         humidity: 0,
@@ -46,14 +67,27 @@ function App() {
         wifi_status: 'unknown',
         created_at: new Date().toISOString(),
       }),
-      temperature: live?.temperature ?? sensorData?.temperature ?? 0,
-      humidity: live?.humidity ?? sensorData?.humidity ?? 0,
-      soil_moisture: live?.soil_moisture ?? sensorData?.soil_moisture ?? 0,
-      pump_status: live?.pump_status ?? sensorData?.pump_status ?? false,
-      led_status: live?.led_status ?? sensorData?.led_status ?? false,
-      device_mode: live?.device_mode ?? sensorData?.device_mode ?? null,
-      wifi_status: live?.wifi_status ?? sensorData?.wifi_status ?? 'unknown',
-      created_at: live?.updatedAt ?? sensorData?.created_at ?? new Date().toISOString(),
+      temperature: live?.temperature ?? fallback?.temperature ?? 0,
+      humidity: live?.humidity ?? fallback?.humidity ?? 0,
+      soil_moisture: live?.soil_moisture ?? fallback?.soil_moisture ?? 0,
+      rain: live?.rain ?? fallback?.rain ?? 0,
+      score: live?.score ?? fallback?.score ?? 0,
+      soil_score: live?.soil_score ?? fallback?.soil_score ?? 0,
+      vdp_score: live?.vdp_score ?? fallback?.vdp_score ?? 0,
+      rain_score: live?.rain_score ?? fallback?.rain_score ?? 0,
+      vpd: live?.vpd ?? fallback?.vpd ?? 0,
+      duration_estimate: live?.duration_estimate ?? fallback?.duration_estimate ?? 0,
+      pump_status: live?.pump_status ?? fallback?.pump_status ?? false,
+      led_status: live?.led_status ?? fallback?.led_status ?? false,
+      device_mode: live?.device_mode ?? fallback?.device_mode ?? null,
+      wifi_status: live?.wifi_status ?? fallback?.wifi_status ?? 'unknown',
+      threshold_kritis: live?.threshold_kritis ?? fallback?.threshold_kritis ?? null,
+      threshold_atas: live?.threshold_atas ?? fallback?.threshold_atas ?? null,
+      threshold_bawah: live?.threshold_bawah ?? fallback?.threshold_bawah ?? null,
+      watering_time: live?.watering_time ?? fallback?.watering_time ?? null,
+      watering_duration: live?.watering_duration ?? fallback?.watering_duration ?? null,
+      schedule_enabled: live?.schedule_enabled ?? fallback?.schedule_enabled ?? true,
+      created_at: live?.updatedAt ?? fallback?.created_at ?? new Date().toISOString(),
     };
   }, [sensorData, mqttStatus.sensorSnapshot]);
 
@@ -107,6 +141,8 @@ function App() {
     ]);
   };
 
+  const mqttHistory = useMemo(() => getSensorHistorySnapshot(), [mqttStatus.lastMessageAt, mqttStatus.sensorSnapshot?.updatedAt]);
+
   const renderPage = () => {
     switch (currentPage) {
       case 'dashboard':
@@ -117,10 +153,11 @@ function App() {
             settings={settings}
             mqttStatus={mqttStatus}
             weatherData={weatherData}
+            health={health}
           />
         );
       case 'monitoring':
-        return <Monitoring history={history} />;
+        return <Monitoring history={history} sensorData={liveSensorData} mqttHistory={mqttHistory} />;
       case 'chat':
         return <ChatPage sensorData={liveSensorData} settings={settings} />;
       case 'control':
@@ -141,6 +178,7 @@ function App() {
             settings={settings}
             mqttStatus={mqttStatus}
             weatherData={weatherData}
+            health={health}
           />
         );
     }
@@ -148,7 +186,7 @@ function App() {
 
   if (sensorLoading && !sensorData) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-teal-50 flex items-center justify-center">
+      <div className="min-h-screen bg-slate-50 text-slate-800 dark:bg-slate-950 dark:text-slate-100 flex items-center justify-center">
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -159,26 +197,29 @@ function App() {
             transition={{ repeat: Infinity, duration: 2, ease: 'linear' }}
             className="w-20 h-20 border-4 border-emerald-200 border-t-emerald-500 rounded-full mx-auto mb-6"
           />
-          <h2 className="text-2xl font-bold text-emerald-800 mb-2">NexaGrow</h2>
-          <p className="text-emerald-600">Memuat data sensor...</p>
+          <h2 className="text-2xl font-bold text-emerald-800 dark:text-emerald-300 mb-2">NexaGrow</h2>
+          <p className="text-emerald-600 dark:text-emerald-400">Memuat data sensor...</p>
         </motion.div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50">
+    <div className="min-h-screen bg-slate-50 text-slate-800 dark:bg-slate-950 dark:text-slate-100">
       <div className="flex">
         <Sidebar currentPage={currentPage} onPageChange={setCurrentPage} />
 
-        <div className="flex-1 lg:ml-0 min-h-screen flex flex-col">
+        <div className="flex-1 min-h-screen flex flex-col">
           <Header
             deviceStatus={deviceStatus}
             mqttStatus={mqttStatus}
             currentPage={currentPage}
+            theme={theme}
+            onToggleTheme={toggleTheme}
+            onRefresh={handleRefresh}
           />
 
-          <main className="flex-1 p-6 overflow-auto">
+          <main className="flex-1 p-4 sm:p-6 overflow-auto">
             <motion.div
               key={currentPage}
               initial={{ opacity: 0, y: 12 }}

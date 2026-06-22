@@ -39,7 +39,8 @@ const SUBSCRIBE_TOPICS = [
   TOPIC_SCHEDULE_STATUS,
 ];
 
-const ESP_ONLINE_TIMEOUT_MS = 30_000;
+const ESP_ONLINE_TIMEOUT_MS = 15_000;
+const HISTORY_LIMIT = 120;
 
 export interface MqttSensorSnapshot {
   device_id: string | null;
@@ -128,7 +129,7 @@ const defaultSnapshot = (): MqttStatusSnapshot => ({
   espOnline: false,
   espLastSeenAt: null,
   systemOnline: false,
-  systemLabel: 'Offline',
+  systemLabel: 'Sistem Offline',
   systemDetail: 'Koneksi belum tersedia',
   lastTopic: null,
   lastPayload: null,
@@ -140,11 +141,13 @@ const defaultSnapshot = (): MqttStatusSnapshot => ({
 
 let snapshot: MqttStatusSnapshot = defaultSnapshot();
 let sensorSnapshot: MqttSensorSnapshot | null = null;
+let sensorHistory: MqttSensorSnapshot[] = [];
 let reconnectTimer: number | null = null;
 
 function emit() {
   const lastSeen = snapshot.espLastSeenAt ? new Date(snapshot.espLastSeenAt).getTime() : 0;
   const espOnline = Boolean(lastSeen && Date.now() - lastSeen <= ESP_ONLINE_TIMEOUT_MS);
+  const systemOnline = snapshot.browserOnline && snapshot.mqttConnected && espOnline;
   const reasonParts: string[] = [];
 
   if (!snapshot.browserOnline) reasonParts.push('Web offline');
@@ -154,9 +157,9 @@ function emit() {
   snapshot = {
     ...snapshot,
     espOnline,
-    systemOnline: snapshot.browserOnline && snapshot.mqttConnected && espOnline,
-    systemLabel: snapshot.browserOnline && snapshot.mqttConnected && espOnline ? 'Online' : 'Offline',
-    systemDetail: snapshot.browserOnline && snapshot.mqttConnected && espOnline
+    systemOnline,
+    systemLabel: systemOnline ? 'Sistem Online' : 'Sistem Offline',
+    systemDetail: systemOnline
       ? 'Web, MQTT, dan ESP32 aktif'
       : reasonParts.filter(Boolean).join(' • ') || 'Sistem belum siap',
     sensorSnapshot,
@@ -168,6 +171,10 @@ function emit() {
 function setSnapshot(next: Partial<MqttStatusSnapshot>) {
   snapshot = { ...snapshot, ...next };
   emit();
+}
+
+function pushHistory(entry: MqttSensorSnapshot) {
+  sensorHistory = [...sensorHistory, entry].slice(-HISTORY_LIMIT);
 }
 
 function setSensorSnapshot(next: SensorDelta, sourceTopic: string, force = false) {
@@ -206,19 +213,16 @@ function setSensorSnapshot(next: SensorDelta, sourceTopic: string, force = false
   }
 
   sensorSnapshot = merged;
+  pushHistory(merged);
   snapshot = {
     ...snapshot,
-    espLastSeenAt: now,
     lastTopic: sourceTopic,
-    lastPayload: null,
+    lastPayload: JSON.stringify(merged),
     lastMessageAt: now,
+    espLastSeenAt: now,
     sensorSnapshot,
   };
   emit();
-}
-
-function isWebSocketBroker(url: string) {
-  return /^wss?:\/\//i.test(url);
 }
 
 function parseNumeric(value: unknown): number | null {
@@ -235,8 +239,8 @@ function parseBoolean(value: unknown): boolean | undefined {
   if (typeof value === 'number') return value !== 0;
   if (typeof value === 'string') {
     const normalized = value.trim().toLowerCase();
-    if (['true', '1', 'on', 'yes', 'y'].includes(normalized)) return true;
-    if (['false', '0', 'off', 'no', 'n'].includes(normalized)) return false;
+    if (['true', '1', 'on', 'yes'].includes(normalized)) return true;
+    if (['false', '0', 'off', 'no'].includes(normalized)) return false;
   }
   return undefined;
 }
@@ -244,17 +248,14 @@ function parseBoolean(value: unknown): boolean | undefined {
 function parseMode(value: unknown): 'manual' | 'auto' | null | undefined {
   if (typeof value !== 'string') return undefined;
   const normalized = value.trim().toLowerCase();
-  if (['auto', 'mode_auto', 'automatic', 'otomatis'].includes(normalized)) return 'auto';
-  if (['manual', 'mode_manual', 'man', 'manual_mode'].includes(normalized)) return 'manual';
-  return null;
+  if (normalized === 'manual' || normalized === 'auto') return normalized;
+  return undefined;
 }
 
 function normalizeJsonSensorPayload(payload: string): SensorDelta | null {
   try {
-    const parsed = JSON.parse(payload);
-    if (!parsed || typeof parsed !== 'object') return null;
-    const obj = parsed as Record<string, unknown>;
-    const wateringDuration = parseNumeric(obj.watering_duration);
+    const obj = JSON.parse(payload);
+    if (!obj || typeof obj !== 'object') return null;
 
     return {
       device_id: typeof obj.device_id === 'string' ? obj.device_id : undefined,
@@ -276,7 +277,7 @@ function normalizeJsonSensorPayload(payload: string): SensorDelta | null {
       threshold_atas: parseNumeric(obj.threshold_atas),
       threshold_bawah: parseNumeric(obj.threshold_bawah),
       watering_time: typeof obj.watering_time === 'string' ? obj.watering_time : undefined,
-      watering_duration: wateringDuration,
+      watering_duration: parseNumeric(obj.watering_duration),
       schedule_enabled: parseBoolean(obj.schedule_enabled),
     };
   } catch {
@@ -393,10 +394,10 @@ function connectOnce() {
   client = mqtt.connect(BROKER_URL, {
     username: MQTT_USERNAME || undefined,
     password: MQTT_PASSWORD || undefined,
-    reconnectPeriod: 2000,
-    connectTimeout: 10_000,
+    reconnectPeriod: 1000,
+    connectTimeout: 6000,
     clean: true,
-    keepalive: 30,
+    keepalive: 15,
     clientId: `nexagrow_web_${Math.random().toString(16).slice(2, 10)}`,
   });
 
@@ -470,10 +471,14 @@ function connectOnce() {
   return client;
 }
 
+function isWebSocketBroker(url: string) {
+  return /^wss?:\/\//i.test(url);
+}
+
 if (typeof window !== 'undefined') {
   window.addEventListener('online', () => setSnapshot({ browserOnline: true }));
   window.addEventListener('offline', () => setSnapshot({ browserOnline: false }));
-  window.setInterval(() => emit(), 5000);
+  window.setInterval(() => emit(), 3000);
 }
 
 export function getMqttClient() {
@@ -486,6 +491,10 @@ export function getMqttStatusSnapshot() {
 
 export function getSensorSnapshot() {
   return snapshot.sensorSnapshot;
+}
+
+export function getSensorHistorySnapshot() {
+  return sensorHistory.slice();
 }
 
 export function subscribeMqttStatus(listener: () => void) {
@@ -507,7 +516,7 @@ export function publishMqtt(
     const timeout = window.setTimeout(() => {
       cleanup();
       reject(new Error('MQTT publish timeout'));
-    }, 10_000);
+    }, 7000);
 
     const cleanup = () => {
       window.clearTimeout(timeout);
