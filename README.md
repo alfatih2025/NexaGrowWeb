@@ -1,4 +1,4 @@
-# Sprout v2 - Smart Farm IoT Dashboard
+# NexaGrow - Smart Farm IoT Dashboard
 
 A modern web application for ESP32 IoT agriculture monitoring and control.
 
