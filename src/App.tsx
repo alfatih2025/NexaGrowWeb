@@ -12,6 +12,8 @@ import { SettingsPage } from './pages/SettingsPage';
 import { AboutPage } from './pages/AboutPage';
 import { useSensorData } from './hooks/useSensorData';
 import { useDeviceStatus } from './hooks/useDeviceStatus';
+
+
 import { useWeather } from './hooks/useWeather';
 import { useSettings } from './hooks/useSettings';
 import { useAlerts } from './hooks/useAlerts';
@@ -25,10 +27,13 @@ import './index.css';
 function App() {
   const [currentPage, setCurrentPage] = useState('dashboard');
   const { data: sensorData, history, loading: sensorLoading } = useSensorData(3000);
+
   const { status: deviceStatus } = useDeviceStatus(5000);
+
   const { settings, updateSettings } = useSettings();
   const { data: weatherData } = useWeather(settings?.location);
   const { createAlert } = useAlerts();
+
   const mqttStatus = useMqttStatus();
   const lastAlertSignatureRef = useRef<string>('');
 
