@@ -18,37 +18,49 @@ import { useAlerts } from './hooks/useAlerts';
 import { useMqttStatus } from './hooks/useMqttStatus';
 import { getPlantHealthSummary } from './lib/plantPhase';
 import { getSensorHistorySnapshot } from './services/mqtt';
+import { recordActivity } from './lib/activityLog';
 
 import './index.css';
 
-type ThemeMode = 'light' | 'dark';
-
-const THEME_STORAGE_KEY = 'nexagrow-theme';
-
-function readStoredTheme(): ThemeMode {
-  if (typeof window === 'undefined') return 'light';
-  const raw = window.localStorage.getItem(THEME_STORAGE_KEY);
-  return raw === 'dark' ? 'dark' : 'light';
-}
-
 function App() {
   const [currentPage, setCurrentPage] = useState('dashboard');
-  const [theme, setTheme] = useState<ThemeMode>(readStoredTheme);
-  const { data: sensorData, history, loading: sensorLoading, refetch: refetchSensor } = useSensorData(3000);
-  const { status: deviceStatus, refetch: refetchDevice } = useDeviceStatus(5000);
-  const { settings } = useSettings();
-  const { data: weatherData } = useWeather();
-  const { createAlert, fetchAlerts } = useAlerts();
+  const { data: sensorData, history, loading: sensorLoading } = useSensorData(3000);
+  const { status: deviceStatus } = useDeviceStatus(5000);
+  const { settings, updateSettings } = useSettings();
+  const { data: weatherData } = useWeather(settings?.location);
+  const { createAlert } = useAlerts();
   const mqttStatus = useMqttStatus();
   const lastAlertSignatureRef = useRef<string>('');
 
   useEffect(() => {
-    const root = document.documentElement;
-    root.classList.toggle('dark', theme === 'dark');
-    window.localStorage.setItem(THEME_STORAGE_KEY, theme);
-  }, [theme]);
+    const pageName =
+      currentPage === 'dashboard'
+        ? 'Dashboard'
+        : currentPage === 'monitoring'
+          ? 'Monitoring'
+          : currentPage === 'chat'
+            ? 'AI Chat'
+            : currentPage === 'control'
+              ? 'Control'
+              : currentPage === 'weather'
+                ? 'Cuaca'
+                : currentPage === 'logs'
+                  ? 'Log & Analitik'
+                  : currentPage === 'settings'
+                    ? 'Setting'
+                    : 'About';
 
-  const toggleTheme = () => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
+    recordActivity({
+      source: 'navigation',
+      type: 'page_view',
+      title: `Membuka halaman ${pageName}`,
+      message: `Membuka halaman ${pageName}`,
+      details: {
+        page: currentPage,
+        title: pageName,
+      },
+    });
+  }, [currentPage]);
 
   const liveSensorData = useMemo(() => {
     const live = mqttStatus.sensorSnapshot;
@@ -133,14 +145,6 @@ function App() {
     checkThresholds();
   }, [liveSensorData, settings, health, createAlert]);
 
-  const handleRefresh = async () => {
-    await Promise.all([
-      refetchSensor(),
-      refetchDevice(),
-      fetchAlerts(),
-    ]);
-  };
-
   const mqttHistory = useMemo(() => getSensorHistorySnapshot(), [mqttStatus.lastMessageAt, mqttStatus.sensorSnapshot?.updatedAt]);
 
   const renderPage = () => {
@@ -151,7 +155,6 @@ function App() {
             sensorData={liveSensorData}
             deviceStatus={deviceStatus}
             settings={settings}
-            mqttStatus={mqttStatus}
             weatherData={weatherData}
             health={health}
           />
@@ -159,11 +162,11 @@ function App() {
       case 'monitoring':
         return <Monitoring history={history} sensorData={liveSensorData} mqttHistory={mqttHistory} />;
       case 'chat':
-        return <ChatPage sensorData={liveSensorData} settings={settings} />;
+        return <ChatPage sensorData={liveSensorData} settings={settings} weatherData={weatherData} />;
       case 'control':
         return <ControlPage sensorData={liveSensorData} />;
       case 'weather':
-        return <WeatherPage />;
+        return <WeatherPage locationCode={settings?.location} settings={settings} updateSettings={updateSettings} />;
       case 'logs':
         return <LogsPage />;
       case 'settings':
@@ -176,7 +179,6 @@ function App() {
             sensorData={liveSensorData}
             deviceStatus={deviceStatus}
             settings={settings}
-            mqttStatus={mqttStatus}
             weatherData={weatherData}
             health={health}
           />
@@ -186,40 +188,35 @@ function App() {
 
   if (sensorLoading && !sensorData) {
     return (
-      <div className="min-h-screen bg-slate-50 text-slate-800 dark:bg-slate-950 dark:text-slate-100 flex items-center justify-center">
+      <div className="min-h-screen bg-slate-50 text-slate-800">
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="text-center"
+          className="flex min-h-screen items-center justify-center text-center"
         >
           <motion.div
             animate={{ rotate: 360 }}
             transition={{ repeat: Infinity, duration: 2, ease: 'linear' }}
-            className="w-20 h-20 border-4 border-emerald-200 border-t-emerald-500 rounded-full mx-auto mb-6"
+            className="mx-auto mb-6 h-20 w-20 rounded-full border-4 border-emerald-200 border-t-emerald-500"
           />
-          <h2 className="text-2xl font-bold text-emerald-800 dark:text-emerald-300 mb-2">NexaGrow</h2>
-          <p className="text-emerald-600 dark:text-emerald-400">Memuat data sensor...</p>
+          <div>
+            <h2 className="mb-2 text-2xl font-bold text-emerald-800">NexaGrow</h2>
+            <p className="text-emerald-600">Memuat data sensor...</p>
+          </div>
         </motion.div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 dark:bg-slate-950 dark:text-slate-100">
-      <div className="flex">
+    <div className="min-h-screen text-slate-800">
+      <div className="flex min-h-screen">
         <Sidebar currentPage={currentPage} onPageChange={setCurrentPage} />
 
-        <div className="flex-1 min-h-screen flex flex-col">
-          <Header
-            deviceStatus={deviceStatus}
-            mqttStatus={mqttStatus}
-            currentPage={currentPage}
-            theme={theme}
-            onToggleTheme={toggleTheme}
-            onRefresh={handleRefresh}
-          />
+        <div className="flex min-h-screen flex-1 flex-col">
+          <Header mqttStatus={mqttStatus} currentPage={currentPage} />
 
-          <main className="flex-1 p-4 sm:p-6 overflow-auto">
+          <main className="flex-1 overflow-auto px-4 py-4 sm:px-6 sm:py-6">
             <motion.div
               key={currentPage}
               initial={{ opacity: 0, y: 12 }}

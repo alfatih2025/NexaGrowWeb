@@ -47,6 +47,9 @@ FOKUS:
 - Suhu: ${latestSensor?.temperature ?? 28}°C
 - Kelembapan Udara: ${latestSensor?.humidity ?? 70}%
 - Kelembapan Tanah: ${latestSensor?.soil_moisture ?? 60}%
+- Ambang Suhu: ${settings.temp_threshold_low ?? 0} - ${settings.temp_threshold_high ?? 0} °C
+- Ambang Kelembapan Udara: ${settings.humidity_threshold_low ?? 0} - ${settings.humidity_threshold_high ?? 0} %
+- Ambang Kelembapan Tanah: ${settings.soil_threshold_low ?? settings.soil_moisture_threshold ?? 40} - ${settings.soil_threshold_high ?? 80} % (kritis ${settings.soil_threshold_critical ?? 30} %)
 - Status Pompa: ${latestSensor?.pump_status ? 'MENYALA' : 'MATI'}
 - Jadwal Siram: ${latestSensor?.schedule_enabled === false ? 'NONAKTIF' : 'AKTIF'}
 - Jam Siram: ${latestSensor?.watering_time ?? '-'}

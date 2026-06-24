@@ -1,0 +1,51 @@
+import type { WeatherLocation } from '../../types/weather';
+
+export const JAWA_TENGAH: WeatherLocation[] = [
+  {
+    code: '33.72.04.1010',
+    label: 'Jebres',
+    province: 'Jawa Tengah',
+    city: 'Kota Surakarta',
+    district: 'Jebres',
+    category: 'jateng',
+    level: 'village',
+    parentCode: '33.72.04',
+    ready: true,
+  },
+  {
+    code: '33.73.01.1001',
+    label: 'Salatiga',
+    province: 'Jawa Tengah',
+    city: 'Kota Salatiga',
+    category: 'jateng',
+    level: 'district',
+    ready: true,
+  },
+  {
+    code: '33.75.01.1001',
+    label: 'Pekalongan',
+    province: 'Jawa Tengah',
+    city: 'Kota Pekalongan',
+    category: 'jateng',
+    level: 'district',
+    ready: true,
+  },
+  {
+    code: '33.76.01.1001',
+    label: 'Tegal',
+    province: 'Jawa Tengah',
+    city: 'Kota Tegal',
+    category: 'jateng',
+    level: 'district',
+    ready: true,
+  },
+  {
+    code: '33.72.01.1001',
+    label: 'Kota Surakarta',
+    province: 'Jawa Tengah',
+    city: 'Kota Surakarta',
+    category: 'jateng',
+    level: 'district',
+    ready: true,
+  },
+] as const;

@@ -1,15 +1,19 @@
 import supabase from './_supabase.js';
 import { requireApiAuth } from './_auth.js';
 
+const DEFAULT_LOCATION_CODE = '33.74.07.1010';
+
 const DEFAULT_SETTINGS = {
   id: 1,
   plant_phase: 'vegetatif',
-  location: 'bmkg',
+  location: DEFAULT_LOCATION_CODE,
   temp_threshold_high: 34,
   temp_threshold_low: 22,
   soil_threshold_low: 45,
   soil_threshold_high: 75,
   soil_threshold_critical: 35,
+  humidity_threshold_low: 60,
+  humidity_threshold_high: 85,
   ph_min: 5.5,
   ph_max: 8.0,
   auto_report: true,
@@ -27,8 +31,31 @@ function clampNumber(value, min, max, fallback) {
   return Math.min(max, Math.max(min, n));
 }
 
+function normalizeRange(low, high, min, max, fallbackLow, fallbackHigh) {
+  let safeLow = clampNumber(low, min, max, fallbackLow);
+  let safeHigh = clampNumber(high, min, max, fallbackHigh);
+
+  if (safeHigh <= safeLow) {
+    safeHigh = Math.min(max, safeLow + 1);
+  }
+  if (safeLow >= safeHigh) {
+    safeLow = Math.max(min, safeHigh - 1);
+  }
+  if (safeLow >= safeHigh) {
+    safeLow = fallbackLow;
+    safeHigh = Math.max(fallbackHigh, safeLow + 1);
+  }
+
+  return [safeLow, safeHigh];
+}
+
 function normalizePhase(value) {
   return String(value || '').trim().toLowerCase() === 'generatif' ? 'generatif' : 'vegetatif';
+}
+
+function normalizeLocation(value) {
+  const raw = String(value || '').trim();
+  return /^\d{2}(?:\.\d{2}){1,3}$/.test(raw) ? raw : DEFAULT_LOCATION_CODE;
 }
 
 function phaseDefaults(phase) {
@@ -44,18 +71,25 @@ function normalizeSettings(input = {}) {
   const soilLow = clampNumber(obj.soil_threshold_low ?? obj.soil_moisture_threshold ?? defaults.soil_threshold_low, 0, 100, defaults.soil_threshold_low);
   const soilHigh = clampNumber(obj.soil_threshold_high ?? defaults.soil_threshold_high, 0, 100, defaults.soil_threshold_high);
   const soilCritical = clampNumber(obj.soil_threshold_critical ?? defaults.soil_threshold_critical, 0, 100, defaults.soil_threshold_critical);
+  const humidityLow = clampNumber(obj.humidity_threshold_low ?? obj.air_humidity_low ?? defaults.humidity_threshold_low, 0, 100, defaults.humidity_threshold_low);
+  const humidityHigh = clampNumber(obj.humidity_threshold_high ?? obj.air_humidity_high ?? defaults.humidity_threshold_high, 0, 100, defaults.humidity_threshold_high);
+
+  const [safeSoilLow, safeSoilHigh] = normalizeRange(soilLow, soilHigh, 0, 100, defaults.soil_threshold_low, defaults.soil_threshold_high);
+  const [safeHumidityLow, safeHumidityHigh] = normalizeRange(humidityLow, humidityHigh, 0, 100, defaults.humidity_threshold_low, defaults.humidity_threshold_high);
 
   return {
     ...obj,
     id: 1,
     plant_phase: phase,
     crop_mode: phase,
-    location: String(obj.location || DEFAULT_SETTINGS.location).trim() || DEFAULT_SETTINGS.location,
+    location: normalizeLocation(obj.location),
     temp_threshold_high: clampNumber(obj.temp_threshold_high ?? defaults.temp_threshold_high, -20, 60, defaults.temp_threshold_high),
     temp_threshold_low: clampNumber(obj.temp_threshold_low ?? defaults.temp_threshold_low, -20, 60, defaults.temp_threshold_low),
-    soil_threshold_low: Math.min(soilLow, soilHigh - 1),
-    soil_threshold_high: Math.max(soilHigh, soilLow + 1),
-    soil_threshold_critical: Math.min(soilCritical, soilLow),
+    soil_threshold_low: safeSoilLow,
+    soil_threshold_high: safeSoilHigh,
+    soil_threshold_critical: Math.min(Math.max(0, soilCritical), safeSoilLow),
+    humidity_threshold_low: safeHumidityLow,
+    humidity_threshold_high: safeHumidityHigh,
     ph_min: clampNumber(obj.ph_min, 0, 14, DEFAULT_SETTINGS.ph_min),
     ph_max: clampNumber(obj.ph_max, 0, 14, DEFAULT_SETTINGS.ph_max),
     auto_report: Boolean(obj.auto_report),

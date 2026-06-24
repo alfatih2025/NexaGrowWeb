@@ -16,6 +16,8 @@ const TOPIC_MODE_CMD = 'sproutai/mode/cmd';
 const TOPIC_MODE_STATUS = 'sproutai/mode/status';
 const TOPIC_WIFI_CMD = 'sproutai/wifi/cmd';
 const TOPIC_WIFI_STATUS = 'sproutai/wifi/status';
+const TOPIC_SETTINGS_CMD = 'sproutai/settings/cmd';
+const TOPIC_SETTINGS_STATUS = 'sproutai/settings/status';
 const TOPIC_SCHEDULE_CMD = 'sproutai/schedule/cmd';
 const TOPIC_SCHEDULE_STATUS = 'sproutai/schedule/status';
 const TOPIC_SENSOR_JSON = 'sproutai/sensor/data';
@@ -36,11 +38,14 @@ const SUBSCRIBE_TOPICS = [
   TOPIC_LAMPU_STATUS,
   TOPIC_MODE_STATUS,
   TOPIC_WIFI_STATUS,
+  TOPIC_SETTINGS_CMD,
+  TOPIC_SETTINGS_STATUS,
   TOPIC_SCHEDULE_STATUS,
 ];
 
 const ESP_ONLINE_TIMEOUT_MS = 15_000;
 const HISTORY_LIMIT = 120;
+const SETTINGS_EVENT = 'nexagrow:settings-updated';
 
 export interface MqttSensorSnapshot {
   device_id: string | null;
@@ -145,8 +150,7 @@ let sensorHistory: MqttSensorSnapshot[] = [];
 let reconnectTimer: number | null = null;
 
 function emit() {
-  const lastSeen = snapshot.espLastSeenAt ? new Date(snapshot.espLastSeenAt).getTime() : 0;
-  const espOnline = Boolean(lastSeen && Date.now() - lastSeen <= ESP_ONLINE_TIMEOUT_MS);
+  const espOnline = snapshot.espOnline;
   const systemOnline = snapshot.browserOnline && snapshot.mqttConnected && espOnline;
   const reasonParts: string[] = [];
 
@@ -203,6 +207,7 @@ function setSensorSnapshot(next: SensorDelta, sourceTopic: string, force = false
   if (!changed) {
     snapshot = {
       ...snapshot,
+      espOnline: true,
       lastTopic: sourceTopic,
       lastPayload: null,
       lastMessageAt: now,
@@ -216,6 +221,7 @@ function setSensorSnapshot(next: SensorDelta, sourceTopic: string, force = false
   pushHistory(merged);
   snapshot = {
     ...snapshot,
+    espOnline: true,
     lastTopic: sourceTopic,
     lastPayload: JSON.stringify(merged),
     lastMessageAt: now,
@@ -223,6 +229,42 @@ function setSensorSnapshot(next: SensorDelta, sourceTopic: string, force = false
     sensorSnapshot,
   };
   emit();
+}
+
+
+function dispatchSettingsEvent(detail: Record<string, unknown>) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.dispatchEvent(new CustomEvent(SETTINGS_EVENT, { detail }));
+  } catch {
+    // ignore dispatch failures
+  }
+}
+
+function parseMqttJsonPayload(payload: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(payload);
+    if (!parsed || typeof parsed !== 'object') return null;
+    return parsed as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+function applySettingsSnapshot(detail: Record<string, unknown>, sourceTopic: string) {
+  const nextSensorDelta: SensorDelta = {
+    threshold_kritis: parseNumeric(detail.threshold_kritis ?? detail.soil_threshold_critical),
+    threshold_atas: parseNumeric(detail.threshold_atas ?? detail.soil_threshold_high),
+    threshold_bawah: parseNumeric(detail.threshold_bawah ?? detail.soil_threshold_low),
+    watering_time: typeof detail.watering_time === 'string' ? detail.watering_time : undefined,
+    watering_duration: parseNumeric(detail.watering_duration),
+    schedule_enabled: detail.watering_enabled === undefined
+      ? (detail.schedule_enabled === undefined ? undefined : parseBoolean(detail.schedule_enabled))
+      : Boolean(detail.watering_enabled),
+  };
+
+  setSensorSnapshot(nextSensorDelta, sourceTopic, true);
+  dispatchSettingsEvent(detail);
 }
 
 function parseNumeric(value: unknown): number | null {
@@ -285,25 +327,42 @@ function normalizeJsonSensorPayload(payload: string): SensorDelta | null {
   }
 }
 
+function parseStatusValue(payload: string): boolean | null {
+  const trimmed = payload.trim();
+  if (!trimmed) return null;
+
+  const lower = trimmed.toLowerCase();
+  if (['online', 'connected', 'true', '1', 'on', 'ready', 'active'].includes(lower)) return true;
+  if (['offline', 'disconnected', 'false', '0', 'off', 'inactive', 'error'].includes(lower)) return false;
+
+  try {
+    const obj = JSON.parse(trimmed);
+    if (!obj || typeof obj !== 'object') return null;
+    const candidate =
+      (obj as Record<string, unknown>).status ??
+      (obj as Record<string, unknown>).state ??
+      (obj as Record<string, unknown>).online ??
+      (obj as Record<string, unknown>).connected;
+    if (typeof candidate === 'boolean') return candidate;
+    if (typeof candidate === 'number') return candidate !== 0;
+    if (typeof candidate === 'string') return parseStatusValue(candidate);
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
 function updateFromTopic(topic: string, payload: string) {
   const now = new Date().toISOString();
   const trimmed = payload.trim();
 
   if (topic === SYSTEM_STATUS_TOPIC || topic === DEVICE_STATUS_TOPIC) {
-    const lower = trimmed.toLowerCase();
-    if (['offline', 'disconnected', 'false', '0'].includes(lower)) {
-      setSnapshot({
-        espOnline: false,
-        espLastSeenAt: null,
-        lastTopic: topic,
-        lastPayload: payload,
-        lastMessageAt: now,
-      });
-      return;
-    }
-
+    const parsedStatus = parseStatusValue(trimmed);
+    const isOnline = parsedStatus ?? true;
     setSnapshot({
-      espLastSeenAt: now,
+      espOnline: isOnline,
+      espLastSeenAt: isOnline ? now : null,
       lastTopic: topic,
       lastPayload: payload,
       lastMessageAt: now,
@@ -347,18 +406,20 @@ function updateFromTopic(topic: string, payload: string) {
     if (mode !== undefined) setSensorSnapshot({ device_mode: mode }, topic);
   } else if (topic === TOPIC_WIFI_STATUS) {
     setSensorSnapshot({ wifi_status: trimmed || null }, topic);
+  } else if (topic === TOPIC_SETTINGS_CMD || topic === TOPIC_SETTINGS_STATUS) {
+    const parsed = parseMqttJsonPayload(trimmed);
+    if (parsed) {
+      applySettingsSnapshot(parsed, topic);
+    }
   } else if (topic === TOPIC_SCHEDULE_STATUS) {
-    try {
-      const parsed = JSON.parse(trimmed);
-      if (parsed && typeof parsed === 'object') {
-        setSensorSnapshot({
-          watering_time: typeof parsed.watering_time === 'string' ? parsed.watering_time : undefined,
-          watering_duration: parseNumeric(parsed.watering_duration),
-          schedule_enabled: parseBoolean(parsed.schedule_enabled),
-        }, topic);
-      }
-    } catch {
-      // ignore non-JSON schedule messages
+    const parsed = parseMqttJsonPayload(trimmed);
+    if (parsed) {
+      setSensorSnapshot({
+        watering_time: typeof parsed.watering_time === 'string' ? parsed.watering_time : undefined,
+        watering_duration: parseNumeric(parsed.watering_duration),
+        schedule_enabled: parseBoolean(parsed.schedule_enabled),
+      }, topic);
+      dispatchSettingsEvent(parsed);
     }
   }
 
@@ -368,6 +429,7 @@ function updateFromTopic(topic: string, payload: string) {
     topic.startsWith('sproutai/lampu/') ||
     topic.startsWith('sproutai/mode/') ||
     topic.startsWith('sproutai/wifi/') ||
+    topic.startsWith('sproutai/settings/') ||
     topic.startsWith('sproutai/schedule/') ||
     topic.startsWith('sproutai/esp32/')
   ) {
@@ -588,6 +650,37 @@ function applyLocalSnapshot(action: string, duration?: number, data?: Record<str
     case 'mode_manual':
       setSensorSnapshot({ device_mode: 'manual' }, TOPIC_MODE_STATUS, true);
       break;
+    case 'settings_sync': {
+      const nextSettings = {
+        plant_phase: String(data?.plant_phase ?? data?.crop_mode ?? '').trim() || undefined,
+        location: String(data?.location ?? '').trim() || undefined,
+        temperature_high: parseNumeric(data?.temp_threshold_high),
+        temperature_low: parseNumeric(data?.temp_threshold_low),
+        humidity_high: parseNumeric(data?.humidity_threshold_high),
+        humidity_low: parseNumeric(data?.humidity_threshold_low),
+        soil_threshold_critical: parseNumeric(data?.soil_threshold_critical),
+        soil_threshold_high: parseNumeric(data?.soil_threshold_high),
+        soil_threshold_low: parseNumeric(data?.soil_threshold_low),
+        watering_time: typeof data?.watering_time === 'string' ? data.watering_time : undefined,
+        watering_duration: parseNumeric(data?.watering_duration),
+        watering_enabled: data?.watering_enabled === undefined ? undefined : Boolean(data.watering_enabled),
+        auto_report: data?.auto_report === undefined ? undefined : Boolean(data.auto_report),
+        report_time: typeof data?.report_time === 'string' ? data.report_time : undefined,
+        user_name: typeof data?.user_name === 'string' ? data.user_name : undefined,
+        user_email: typeof data?.user_email === 'string' ? data.user_email : undefined,
+      } as Record<string, unknown>;
+
+      setSensorSnapshot({
+        threshold_kritis: parseNumeric(data?.soil_threshold_critical),
+        threshold_atas: parseNumeric(data?.soil_threshold_high),
+        threshold_bawah: parseNumeric(data?.soil_threshold_low),
+        watering_time: typeof data?.watering_time === 'string' ? data.watering_time : undefined,
+        watering_duration: parseNumeric(data?.watering_duration),
+        schedule_enabled: data?.watering_enabled === undefined ? undefined : Boolean(data.watering_enabled),
+      }, TOPIC_SETTINGS_CMD, true);
+      dispatchSettingsEvent(nextSettings);
+      break;
+    }
     case 'schedule_set':
       setSensorSnapshot({
         watering_time: typeof data?.watering_time === 'string' ? data.watering_time : undefined,

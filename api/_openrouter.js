@@ -4,35 +4,6 @@ import path from 'node:path';
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const OPENROUTER_MODELS_URL = 'https://openrouter.ai/api/v1/models';
 
-const ARDUINO_FORMULA_REFERENCE = [
-  'RUMUS ARDUINO NANO YANG WAJIB DIIKUTI:',
-  '1) Soil moisture percent:',
-  '   moisture = constrain(mapFloat(rawSoil, SOIL_RAW_DRY, SOIL_RAW_WET, 0, 100), 0, 100)',
-  '   dengan kalibrasi default: SOIL_RAW_DRY = 830 dan SOIL_RAW_WET = 350',
-  '',
-  '2) Vapor Pressure Deficit (VPD):',
-  '   svp = 0.6108 * exp((17.27 * suhu) / (suhu + 237.3))',
-  '   avp = svp * (kelembapan_udara / 100)',
-  '   vpd = svp - avp',
-  '',
-  '3) Soil score:',
-  '   soilRange = atas - kritis',
-  '   skortanah = constrain(((atas - k_tanah) * 50) / soilRange, 0, 50)',
-  '',
-  '4) VPD score:',
-  '   skorvdp = constrain(mapFloat(vpd, 0.4, 2.0, 0, 30), 0, 30)',
-  '',
-  '5) Total score:',
-  '   skortotal = skortanah + skorvdp - skorhujan',
-  '',
-  '6) Estimasi durasi siram:',
-  '   durasi_total = round(max(0, 5 * (atas - k_tanah) / 100 * max(vpd, 0.5)))',
-  '',
-  '7) Logika relay:',
-  '   ON jika k_tanah <= kritis atau skortotal >= 60',
-  '   OFF jika k_tanah >= atas atau hujan >= 5 atau suhu <= 20',
-].join('\n');
-
 let cachedLocalEnv = null;
 
 function readLocalEnv() {
@@ -157,6 +128,16 @@ function normalizeSensorContext(sensor) {
     soil_threshold_critical: safeNumber(sensor.soil_threshold_critical),
     temp_threshold_low: safeNumber(sensor.temp_threshold_low),
     temp_threshold_high: safeNumber(sensor.temp_threshold_high),
+    formula_name: typeof sensor.formula_name === 'string' && sensor.formula_name.trim() ? sensor.formula_name.trim() : null,
+    formula_soil: typeof sensor.formula_soil === 'string' && sensor.formula_soil.trim() ? sensor.formula_soil.trim() : null,
+    formula_vpd: typeof sensor.formula_vpd === 'string' && sensor.formula_vpd.trim() ? sensor.formula_vpd.trim() : null,
+    formula_score: typeof sensor.formula_score === 'string' && sensor.formula_score.trim() ? sensor.formula_score.trim() : null,
+    soil_raw_dry: safeNumber(sensor.soil_raw_dry),
+    weather_location: typeof sensor.weather_location === 'string' && sensor.weather_location.trim() ? sensor.weather_location.trim() : null,
+    weather_condition: typeof sensor.weather_condition === 'string' && sensor.weather_condition.trim() ? sensor.weather_condition.trim() : null,
+    weather_temperature: safeNumber(sensor.weather_temperature),
+    weather_rain_chance: safeNumber(sensor.weather_rain_chance),
+    weather_forecast_location: typeof sensor.weather_forecast_location === 'string' && sensor.weather_forecast_location.trim() ? sensor.weather_forecast_location.trim() : null,
   };
 }
 
@@ -178,6 +159,7 @@ function buildSystemPrompt(sensor) {
         formatLine('Kelembapan Udara', normalized.humidity, ' %'),
         formatLine('Kelembapan Tanah', normalized.soil_moisture, ' %'),
         formatLine('Status Pompa', normalized.pump_status ? 'MENYALA' : 'MATI'),
+        formatLine('Status Lampu', normalized.led_status ? 'MENYALA' : 'MATI'),
         formatLine('Mode Operasi', normalized.device_mode ? normalized.device_mode.toUpperCase() : 'TIDAK DIKETAHUI'),
         formatLine('Jadwal Siram', normalized.schedule_enabled === false ? 'NONAKTIF' : 'AKTIF'),
         formatLine('Jam Siram', normalized.watering_time),
@@ -191,25 +173,42 @@ function buildSystemPrompt(sensor) {
         formatLine('Batas Kritis Tanah', normalized.soil_threshold_critical, ' %'),
         formatLine('Batas Suhu Rendah', normalized.temp_threshold_low, ' °C'),
         formatLine('Batas Suhu Tinggi', normalized.temp_threshold_high, ' °C'),
+        formatLine('Nama Rumus', normalized.formula_name),
+        formatLine('Rumus Soil', normalized.formula_soil),
+        formatLine('Rumus VPD', normalized.formula_vpd),
+        formatLine('Rumus Skor', normalized.formula_score),
+        formatLine('Soil Dry Raw', normalized.soil_raw_dry),
         formatLine('Waktu Data', normalized.created_at || normalized.updatedAt),
       ].join('\n')
     : '- Data sensor belum tersedia.';
+
+  const weatherLines = normalized
+    ? [
+        formatLine('Lokasi Cuaca', normalized.weather_location),
+        formatLine('Lokasi Prakiraan', normalized.weather_forecast_location),
+        formatLine('Kondisi Cuaca', normalized.weather_condition),
+        formatLine('Suhu Cuaca', normalized.weather_temperature, ' °C'),
+        formatLine('Peluang Hujan', normalized.weather_rain_chance, ' %'),
+      ].join('\n')
+    : '- Data cuaca belum tersedia.';
 
   return [
     'Kamu adalah Smart Farm Assistant untuk aplikasi NexaGrow.',
     'Jawab dalam bahasa Indonesia yang ramah, singkat, dan langsung bisa dipakai.',
     'Fokus pada kondisi tanaman, rekomendasi perawatan, irigasi, jadwal penyiraman, dan perangkat IoT.',
     'Gunakan data sensor yang diberikan sebagai sumber utama. Jangan mengarang angka yang tidak ada.',
+    'Jika rumus pengolahan disediakan dari perangkat, gunakan rumus itu sebagai acuan utama untuk menjelaskan perhitungan dan verifikasi.',
+    'Saat diminta menjelaskan angka, uraikan langkah hitung sesuai rumus perangkat, bukan rumus generik lain.',
     'Jika pengguna memberi skenario hipotetis yang berbeda dari data sensor nyata, prioritaskan skenario pengguna dan jawab sesuai konteks baru itu.',
     'Jika data sensor belum tersedia, katakan bahwa data belum masuk lalu berikan saran umum yang aman.',
+    'Jika data cuaca tersedia, gunakan lokasi cuaca aktif dan kondisi cuaca untuk rekomendasi yang spesifik wilayah.',
     'Bila fase tanaman aktif disebut vegetatif atau generatif, sesuaikan saran air, suhu, dan stres tanaman dengan fase tersebut.',
-    'Gunakan rumus pengolahan Arduino berikut tanpa mengganti konstanta kecuali pengguna meminta kalibrasi baru secara eksplisit.',
     '',
     'DATA SENSOR TERKINI:',
     sensorLines,
     '',
-    'REFERENSI RUMUS ARDUINO:',
-    ARDUINO_FORMULA_REFERENCE,
+    'DATA CUACA TERKINI:',
+    weatherLines,
   ].join('\n');
 }
 

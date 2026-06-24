@@ -17,6 +17,28 @@ const COMMAND_MAP = {
   led_off: { topic: 'sproutai/lampu/cmd', payload: 'OFF' },
   mode_auto: { topic: 'sproutai/mode/cmd', payload: 'AUTO' },
   mode_manual: { topic: 'sproutai/mode/cmd', payload: 'MANUAL' },
+  settings_sync: (data, commandId) => ({
+    topic: 'sproutai/settings/cmd',
+    payload: JSON.stringify({
+      command_id: commandId,
+      plant_phase: String(data?.plant_phase || '').trim(),
+      location: String(data?.location || '').trim(),
+      temp_threshold_low: Number(data?.temp_threshold_low ?? 0),
+      temp_threshold_high: Number(data?.temp_threshold_high ?? 0),
+      humidity_threshold_low: Number(data?.humidity_threshold_low ?? 0),
+      humidity_threshold_high: Number(data?.humidity_threshold_high ?? 0),
+      soil_threshold_low: Number(data?.soil_threshold_low ?? 0),
+      soil_threshold_high: Number(data?.soil_threshold_high ?? 0),
+      soil_threshold_critical: Number(data?.soil_threshold_critical ?? 0),
+      watering_time: String(data?.watering_time || '').trim(),
+      watering_duration: Number(data?.watering_duration ?? 10),
+      watering_enabled: Boolean(data?.watering_enabled ?? true),
+      auto_report: Boolean(data?.auto_report ?? true),
+      report_time: String(data?.report_time || '08:00').trim(),
+      user_name: String(data?.user_name || '').trim(),
+      user_email: String(data?.user_email || '').trim(),
+    }),
+  }),
   schedule_set: (data, commandId) => ({
     topic: 'sproutai/schedule/cmd',
     payload: JSON.stringify({

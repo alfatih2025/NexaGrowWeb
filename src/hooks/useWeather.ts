@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
-import { transformBmkgWeather } from '../lib/bmkgWeather';
+import { buildBmkgWeatherUrl, resolveWeatherLocationLabel, normalizeWeatherLocationCode } from '../lib/weatherLocations';
+import { createStaticWeatherFallback, transformBmkgWeather } from '../lib/bmkgWeather';
 
 export interface WeatherData {
   location: string;
+  location_code?: string;
   current: {
     temperature: number;
     humidity: number;
@@ -20,37 +22,142 @@ export interface WeatherData {
 }
 
 const BMKG_URL = import.meta.env.VITE_BMKG_URL;
+const WEATHER_CACHE_PREFIX = 'nexagrow_weather_cache_v1';
 
-export function useWeather() {
+function getWeatherCacheKey(locationCode: string) {
+  return `${WEATHER_CACHE_PREFIX}:${locationCode}`;
+}
+
+function readWeatherCache(locationCode: string) {
+  if (typeof window === 'undefined') return null;
+
+  try {
+    const raw = window.localStorage.getItem(getWeatherCacheKey(locationCode));
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== 'object') return null;
+
+    return parsed as WeatherData;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeWeatherData(locationCode: string, data: WeatherData | null | undefined, fallbackLabel: string): WeatherData {
+  const safe = data && typeof data === 'object' ? data : null;
+  const current = safe?.current ?? {
+    temperature: 28,
+    humidity: 75,
+    weather: 'Cerah Berawan',
+    wind_speed: 10,
+    rain_chance: 20,
+  };
+
+  const sourceForecast = safe?.forecast;
+  const forecast = Array.isArray(sourceForecast)
+    ? sourceForecast.filter(Boolean).slice(0, 8).map((item) => ({
+        datetime: String(item?.datetime ?? new Date().toISOString()),
+        temperature: Number(item?.temperature ?? 0) || 0,
+        humidity: Number(item?.humidity ?? 0) || 0,
+        weather: String(item?.weather ?? 'Cerah Berawan'),
+        rain_chance: Number(item?.rain_chance ?? 0) || 0,
+      }))
+    : [];
+
+  return {
+    location: String(safe?.location ?? fallbackLabel),
+    location_code: String(safe?.location_code ?? locationCode),
+    current: {
+      temperature: Number(current.temperature) || 0,
+      humidity: Number(current.humidity) || 0,
+      weather: String(current.weather ?? 'Cerah Berawan'),
+      wind_speed: Number(current.wind_speed) || 0,
+      rain_chance: Number(current.rain_chance) || 0,
+    },
+    forecast,
+  };
+}
+
+function writeWeatherCache(locationCode: string, data: WeatherData) {
+  if (typeof window === 'undefined') return;
+
+  try {
+    window.localStorage.setItem(getWeatherCacheKey(locationCode), JSON.stringify(normalizeWeatherData(locationCode, data, data.location)));
+  } catch {
+    // ignore cache write failures
+  }
+}
+
+export function useWeather(locationCode?: string) {
   const [data, setData] = useState<WeatherData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    const controller = new AbortController();
+    const normalizedLocation = normalizeWeatherLocationCode(locationCode);
+    const fallbackLabel = resolveWeatherLocationLabel(normalizedLocation);
+    const cachedWeather = readWeatherCache(normalizedLocation);
+    const staticFallback = createStaticWeatherFallback(normalizedLocation, fallbackLabel);
+
+    setLoading(true);
+    setError(null);
+    setData(normalizeWeatherData(normalizedLocation, cachedWeather ?? staticFallback, fallbackLabel));
+
     const fetchWeather = async () => {
       try {
-        setLoading(true);
-        const weather = await fetch('/api/weather')
-          .then((res) => (res.ok ? res.json() : Promise.reject(new Error('Failed to fetch weather'))))
-          .catch(async () => {
-            if (!BMKG_URL) throw new Error('VITE_BMKG_URL is not configured');
-            const bmkgRes = await fetch(BMKG_URL);
-            if (!bmkgRes.ok) throw new Error('Failed to fetch BMKG weather');
-            return transformBmkgWeather(await bmkgRes.json());
-          });
-        setData(weather);
+        const apiUrl = `/api/weather?location=${encodeURIComponent(normalizedLocation)}`;
+        const response = await fetch(apiUrl, { signal: controller.signal });
+
+        if (response.ok) {
+          const weather = await response.json();
+          const resolved = normalizeWeatherData(normalizedLocation, { ...weather, location_code: normalizedLocation }, fallbackLabel);
+          setData(resolved);
+          writeWeatherCache(normalizedLocation, resolved);
+          setError(null);
+          return;
+        }
+
+        if (BMKG_URL) {
+          const bmkgUrl = buildBmkgWeatherUrl(BMKG_URL, normalizedLocation);
+          const bmkgRes = await fetch(bmkgUrl, { signal: controller.signal });
+
+          if (bmkgRes.ok) {
+            const bmkgJson = await bmkgRes.json();
+            const weather = transformBmkgWeather(bmkgJson, fallbackLabel);
+            const resolved = normalizeWeatherData(normalizedLocation, { ...weather, location_code: normalizedLocation }, fallbackLabel);
+            setData(resolved);
+            writeWeatherCache(normalizedLocation, resolved);
+            setError(null);
+            return;
+          }
+        }
+
+        const fallbackData = normalizeWeatherData(normalizedLocation, cachedWeather ?? staticFallback, fallbackLabel);
+        setData(fallbackData);
         setError(null);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Unknown error');
+        if ((err as Error)?.name === 'AbortError') return;
+
+        const fallbackData = normalizeWeatherData(normalizedLocation, cachedWeather ?? staticFallback, fallbackLabel);
+        setData(fallbackData);
+        setError(null);
       } finally {
-        setLoading(false);
+        if (!controller.signal.aborted) {
+          setLoading(false);
+        }
       }
     };
 
     fetchWeather();
-    const interval = setInterval(fetchWeather, 300000);
-    return () => clearInterval(interval);
-  }, []);
+    const interval = window.setInterval(fetchWeather, 300000);
+
+    return () => {
+      controller.abort();
+      window.clearInterval(interval);
+    };
+  }, [locationCode]);
 
   return { data, loading, error };
 }

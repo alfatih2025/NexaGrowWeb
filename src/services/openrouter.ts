@@ -1,5 +1,4 @@
 import { buildApiHeaders } from '../lib/apiAuth';
-import { getArduinoFormulaReference } from '../lib/arduinoFormula';
 
 const OPENROUTER_CHAT_ENDPOINT = '/api/openrouter-chat';
 const OPENROUTER_STATUS_ENDPOINT = '/api/openrouter-status';
@@ -52,8 +51,20 @@ export interface SensorSnapshotContext {
   soil_threshold_low?: number | null;
   soil_threshold_high?: number | null;
   soil_threshold_critical?: number | null;
+  humidity_threshold_low?: number | null;
+  humidity_threshold_high?: number | null;
   temp_threshold_low?: number | null;
   temp_threshold_high?: number | null;
+  formula_name?: string | null;
+  formula_soil?: string | null;
+  formula_vpd?: string | null;
+  formula_score?: string | null;
+  soil_raw_dry?: number | null;
+  weather_location?: string | null;
+  weather_condition?: string | null;
+  weather_temperature?: number | null;
+  weather_rain_chance?: number | null;
+  weather_forecast_location?: string | null;
 }
 
 interface SensorSnapshotApi {
@@ -85,8 +96,20 @@ interface SensorSnapshotApi {
   soil_threshold_low?: number | string | null;
   soil_threshold_high?: number | string | null;
   soil_threshold_critical?: number | string | null;
+  humidity_threshold_low?: number | string | null;
+  humidity_threshold_high?: number | string | null;
   temp_threshold_low?: number | string | null;
   temp_threshold_high?: number | string | null;
+  formula_name?: string | null;
+  formula_soil?: string | null;
+  formula_vpd?: string | null;
+  formula_score?: string | null;
+  soil_raw_dry?: number | string | null;
+  weather_location?: string | null;
+  weather_condition?: string | null;
+  weather_temperature?: number | string | null;
+  weather_rain_chance?: number | string | null;
+  weather_forecast_location?: string | null;
 }
 
 interface SensorSnapshotResponse {
@@ -118,8 +141,20 @@ interface SensorSnapshotResponse {
   soil_threshold_low?: number | null;
   soil_threshold_high?: number | null;
   soil_threshold_critical?: number | null;
+  humidity_threshold_low?: number | null;
+  humidity_threshold_high?: number | null;
   temp_threshold_low?: number | null;
   temp_threshold_high?: number | null;
+  formula_name?: string | null;
+  formula_soil?: string | null;
+  formula_vpd?: string | null;
+  formula_score?: string | null;
+  soil_raw_dry?: number | null;
+  weather_location?: string | null;
+  weather_condition?: string | null;
+  weather_temperature?: number | null;
+  weather_rain_chance?: number | null;
+  weather_forecast_location?: string | null;
 }
 
 function safeNumber(value: unknown): number | null {
@@ -147,7 +182,7 @@ function safePhase(value: unknown): 'vegetatif' | 'generatif' | null | undefined
   return value.trim().toLowerCase() === 'generatif' ? 'generatif' : 'vegetatif';
 }
 
-function normalizeSensorContext(input: unknown): SensorSnapshotContext | null {
+function normalizeSensorContext(input: unknown): Partial<SensorSnapshotContext> | null {
   if (!input || typeof input !== 'object') return null;
 
   const sensor = input as SensorSnapshotApi;
@@ -167,30 +202,42 @@ function normalizeSensorContext(input: unknown): SensorSnapshotContext | null {
     pump_status: safeBoolean(sensor.pump_status) ?? false,
     led_status: safeBoolean(sensor.led_status) ?? false,
     device_mode: sensor.device_mode === 'auto' || sensor.device_mode === 'manual' ? sensor.device_mode : null,
-    wifi_status: typeof sensor.wifi_status === 'string' && sensor.wifi_status.trim() ? sensor.wifi_status.trim() : null,
+    wifi_status: typeof sensor.wifi_status === 'string' ? sensor.wifi_status : null,
     threshold_kritis: safeNumber(sensor.threshold_kritis),
     threshold_atas: safeNumber(sensor.threshold_atas),
     threshold_bawah: safeNumber(sensor.threshold_bawah),
     watering_time: typeof sensor.watering_time === 'string' ? sensor.watering_time : null,
     watering_duration: safeNumber(sensor.watering_duration),
-    schedule_enabled: safeBoolean(sensor.schedule_enabled),
+    schedule_enabled: typeof sensor.schedule_enabled === 'boolean' ? sensor.schedule_enabled : undefined,
     created_at: typeof sensor.created_at === 'string' ? sensor.created_at : null,
     updatedAt: typeof sensor.updatedAt === 'string' ? sensor.updatedAt : null,
     sourceTopic: typeof sensor.sourceTopic === 'string' ? sensor.sourceTopic : null,
-    plant_phase: safePhase(sensor.plant_phase),
-    soil_threshold_low: safeNumber(sensor.soil_threshold_low),
-    soil_threshold_high: safeNumber(sensor.soil_threshold_high),
-    soil_threshold_critical: safeNumber(sensor.soil_threshold_critical),
-    temp_threshold_low: safeNumber(sensor.temp_threshold_low),
-    temp_threshold_high: safeNumber(sensor.temp_threshold_high),
+    plant_phase: sensor.plant_phase === 'generatif' || sensor.plant_phase === 'vegetatif' ? sensor.plant_phase : null,
+    soil_threshold_low: typeof sensor.soil_threshold_low === 'number' ? sensor.soil_threshold_low : null,
+    soil_threshold_high: typeof sensor.soil_threshold_high === 'number' ? sensor.soil_threshold_high : null,
+    soil_threshold_critical: typeof sensor.soil_threshold_critical === 'number' ? sensor.soil_threshold_critical : null,
+    humidity_threshold_low: typeof sensor.humidity_threshold_low === 'number' ? sensor.humidity_threshold_low : null,
+    humidity_threshold_high: typeof sensor.humidity_threshold_high === 'number' ? sensor.humidity_threshold_high : null,
+    temp_threshold_low: typeof sensor.temp_threshold_low === 'number' ? sensor.temp_threshold_low : null,
+    temp_threshold_high: typeof sensor.temp_threshold_high === 'number' ? sensor.temp_threshold_high : null,
+    formula_name: typeof sensor.formula_name === 'string' ? sensor.formula_name : null,
+    formula_soil: typeof sensor.formula_soil === 'string' ? sensor.formula_soil : null,
+    formula_vpd: typeof sensor.formula_vpd === 'string' ? sensor.formula_vpd : null,
+    formula_score: typeof sensor.formula_score === 'string' ? sensor.formula_score : null,
+    soil_raw_dry: typeof sensor.soil_raw_dry === 'number' ? sensor.soil_raw_dry : null,
+    weather_location: typeof sensor.weather_location === 'string' ? sensor.weather_location : null,
+    weather_condition: typeof sensor.weather_condition === 'string' ? sensor.weather_condition : null,
+    weather_temperature: typeof sensor.weather_temperature === 'number' ? sensor.weather_temperature : null,
+    weather_rain_chance: typeof sensor.weather_rain_chance === 'number' ? sensor.weather_rain_chance : null,
+    weather_forecast_location: typeof sensor.weather_forecast_location === 'string' ? sensor.weather_forecast_location : null,
   };
 }
 
-async function fetchLatestSensorSnapshot(): Promise<SensorSnapshotContext | null> {
+async function fetchLatestSensorSnapshot(): Promise<Partial<SensorSnapshotContext> | null> {
   try {
     const response = await fetch(SENSOR_ENDPOINT, { headers: buildApiHeaders() });
     if (!response.ok) return null;
-    const payload = (await response.json().catch(() => null)) as SensorSnapshotResponse | null;
+    const payload = await response.json();
     if (!payload || typeof payload !== 'object') return null;
     return normalizeSensorContext(payload);
   } catch {

@@ -1,3 +1,4 @@
+
 import { useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { SensorChart } from '../components/SensorChart';
@@ -54,7 +55,6 @@ export function Monitoring({ history, sensorData, mqttHistory }: MonitoringProps
         <Activity className="h-6 w-6 text-emerald-600" />
         <div>
           <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Monitoring Real-time</h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400">Grafik mengikuti data API + snapshot MQTT terakhir agar tetap terlihat saat perangkat sedang offline.</p>
         </div>
       </div>
 

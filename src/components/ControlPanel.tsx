@@ -189,7 +189,7 @@ export function ControlPanel({ sensorData }: ControlPanelProps) {
           />
         </div>
         <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
-          Saat kelembapan tanah rendah, ESP32 akan menyalakan pompa secara mandiri sesuai rumus Arduino Nano.
+          Saat kelembapan tanah rendah, ESP32 akan menyalakan pompa secara mandiri.
         </p>
       </div>
     </div>

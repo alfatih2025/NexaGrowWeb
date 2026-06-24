@@ -1,3 +1,4 @@
+
 import { Info, Cpu, Radar, Bell, Zap, BookOpen, Activity } from 'lucide-react';
 
 function Feature({
@@ -103,15 +104,6 @@ export function AboutPage() {
           icon={Cpu}
         />
       </div>
-
-      <div className="rounded-2xl bg-white/70 backdrop-blur border border-emerald-100 p-6 shadow-sm">
-        <h2 className="text-xl font-bold text-gray-900">Catatan</h2>
-        <p className="text-sm text-gray-700 leading-relaxed mt-3">
-          Informasi di halaman ini bersifat deskriptif. Implementasi fitur mengikuti konfigurasi perangkat dan pengaturan ambang batas yang
-          tersimpan pada sistem.
-        </p>
-      </div>
     </div>
   );
 }
-

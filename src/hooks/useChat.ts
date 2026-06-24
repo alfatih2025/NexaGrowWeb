@@ -94,8 +94,20 @@ function normalizeSensorContext(sensorContext?: Partial<SensorSnapshotContext> |
     soil_threshold_low: typeof sensorContext.soil_threshold_low === 'number' ? sensorContext.soil_threshold_low : null,
     soil_threshold_high: typeof sensorContext.soil_threshold_high === 'number' ? sensorContext.soil_threshold_high : null,
     soil_threshold_critical: typeof sensorContext.soil_threshold_critical === 'number' ? sensorContext.soil_threshold_critical : null,
+    humidity_threshold_low: typeof sensorContext.humidity_threshold_low === 'number' ? sensorContext.humidity_threshold_low : null,
+    humidity_threshold_high: typeof sensorContext.humidity_threshold_high === 'number' ? sensorContext.humidity_threshold_high : null,
     temp_threshold_low: typeof sensorContext.temp_threshold_low === 'number' ? sensorContext.temp_threshold_low : null,
     temp_threshold_high: typeof sensorContext.temp_threshold_high === 'number' ? sensorContext.temp_threshold_high : null,
+    formula_name: typeof sensorContext.formula_name === 'string' ? sensorContext.formula_name : null,
+    formula_soil: typeof sensorContext.formula_soil === 'string' ? sensorContext.formula_soil : null,
+    formula_vpd: typeof sensorContext.formula_vpd === 'string' ? sensorContext.formula_vpd : null,
+    formula_score: typeof sensorContext.formula_score === 'string' ? sensorContext.formula_score : null,
+    soil_raw_dry: typeof sensorContext.soil_raw_dry === 'number' ? sensorContext.soil_raw_dry : null,
+    weather_location: typeof sensorContext.weather_location === 'string' ? sensorContext.weather_location : null,
+    weather_condition: typeof sensorContext.weather_condition === 'string' ? sensorContext.weather_condition : null,
+    weather_temperature: typeof sensorContext.weather_temperature === 'number' ? sensorContext.weather_temperature : null,
+    weather_rain_chance: typeof sensorContext.weather_rain_chance === 'number' ? sensorContext.weather_rain_chance : null,
+    weather_forecast_location: typeof sensorContext.weather_forecast_location === 'string' ? sensorContext.weather_forecast_location : null,
   };
 }
 

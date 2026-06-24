@@ -1,39 +1,493 @@
-import { useWeather } from '../hooks/useWeather';
-import { WeatherCard } from '../components/WeatherCard';
-import { CloudSun } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
+import { CloudSun, ChevronDown, Save, MapPin, Navigation2 } from 'lucide-react';
+import { WeatherMotionForecast } from '../components/WeatherMotionForecast';
+import { useWeather } from '../hooks/useWeather';
+import { useControl } from '../hooks/useControl';
+import type { Settings } from '../hooks/useSettings';
+import {
+  DEFAULT_WEATHER_LOCATION_CODE,
+  WEATHER_LOCATION_CATEGORIES,
+  getWeatherLocationByCode,
+  getWeatherLocationCities,
+  getWeatherLocationDistricts,
+  getWeatherLocationItemByPath,
+  getWeatherLocationProvinces,
+  getWeatherLocationVillages,
+  getWeatherLocationsByCategory,
+  resolveWeatherLocationPath,
+} from '../lib/weatherLocations';
+import type { WeatherLocationCategory } from '../types/weather';
+import { recordActivity } from '../lib/activityLog';
 
-export function WeatherPage() {
-  const { data, loading } = useWeather();
+interface WeatherPageProps {
+  locationCode?: string;
+  settings?: Settings | null;
+  updateSettings?: (updates: Partial<Settings>) => Promise<Settings>;
+}
+
+type WeatherSelection = {
+  category: WeatherLocationCategory;
+  province: string;
+  city: string;
+  district: string;
+  locationCode: string;
+};
+
+type BmkgVillageLocation = {
+  code: string;
+  label: string;
+  province: string;
+  city: string;
+  district: string;
+  category: 'semarang';
+  level: 'village';
+  parentCode: string;
+  village?: string;
+  ready?: boolean;
+};
+
+const STORAGE_KEY = 'nexagrow-weather-selection-v1';
+
+function uniqueValues(values: Array<string | undefined | null>) {
+  return Array.from(new Set(values.map((value) => String(value ?? '').trim()).filter(Boolean)));
+}
+
+function readStoredSelection(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const value = raw && raw.trim() ? raw.trim() : '';
+    return value || null;
+  } catch {
+    return null;
+  }
+}
+
+function persistStoredSelection(code: string) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(STORAGE_KEY, code);
+  } catch {
+    // ignore
+  }
+}
+
+function resolveSelectionFromCode(code: string): WeatherSelection {
+  const location = getWeatherLocationByCode(code) ?? getWeatherLocationByCode(DEFAULT_WEATHER_LOCATION_CODE);
+
+  if (!location) {
+    return {
+      category: 'semarang',
+      province: 'Jawa Tengah',
+      city: 'Kota Semarang',
+      district: 'Semarang Selatan',
+      locationCode: DEFAULT_WEATHER_LOCATION_CODE,
+    };
+  }
+
+  return {
+    category: location.category,
+    province: location.province,
+    city: location.city,
+    district: location.district || (location.level === 'district' ? location.label : ''),
+    locationCode: location.code,
+  };
+}
+
+function pickFirstLocationCode(category: WeatherSelection['category'], province: string, city: string, district?: string) {
+  const item = getWeatherLocationItemByPath(category, province, city, district);
+  return item?.code || DEFAULT_WEATHER_LOCATION_CODE;
+}
+
+function resolveSelection(next: Partial<WeatherSelection>, previous: WeatherSelection): WeatherSelection {
+  const category = next.category || previous.category;
+  const nextCategoryItems = getWeatherLocationsByCategory(category).filter((item) => item.ready !== false);
+  const nextProvinces = uniqueValues(nextCategoryItems.map((item) => item.province));
+  const province = nextProvinces.includes(next.province || previous.province) ? (next.province || previous.province) : nextProvinces[0] || previous.province;
+  const nextCities = uniqueValues(nextCategoryItems.filter((item) => item.province === province).map((item) => item.city));
+  const city = nextCities.includes(next.city || previous.city) ? (next.city || previous.city) : nextCities[0] || previous.city;
+  const nextDistricts = uniqueValues(
+    nextCategoryItems
+      .filter((item) => item.province === province && item.city === city)
+      .map((item) => item.district || (item.level === 'district' ? item.label : '')),
+  );
+  const district = nextDistricts.includes(next.district || previous.district) ? (next.district || previous.district) : nextDistricts[0] || '';
+
+  const nextVillages = nextCategoryItems.filter(
+    (item) => item.province === province && item.city === city && item.district === district && item.level === 'village',
+  );
+
+  let locationCode = next.locationCode || previous.locationCode;
+  if (nextVillages.length > 0) {
+    locationCode = nextVillages.some((item) => item.code === locationCode) ? locationCode : nextVillages[0].code;
+  } else {
+    locationCode = pickFirstLocationCode(category, province, city, district);
+  }
+
+  return { category, province, city, district, locationCode };
+}
+
+export function WeatherPage({ locationCode, settings, updateSettings }: WeatherPageProps) {
+  const initialCode = locationCode || settings?.location || readStoredSelection() || DEFAULT_WEATHER_LOCATION_CODE;
+  const [selection, setSelection] = useState<WeatherSelection>(resolveSelectionFromCode(initialCode));
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [bmkgVillages, setBmkgVillages] = useState<BmkgVillageLocation[]>([]);
+  const [loadingVillages, setLoadingVillages] = useState(false);
+  const [villagesError, setVillagesError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const nextCode = settings?.location || locationCode || readStoredSelection() || DEFAULT_WEATHER_LOCATION_CODE;
+    setSelection(resolveSelectionFromCode(nextCode));
+  }, [locationCode, settings?.location]);
+
+  useEffect(() => {
+    persistStoredSelection(selection.locationCode);
+  }, [selection.locationCode]);
+
+  const provinceOptions = useMemo(() => getWeatherLocationProvinces(selection.category), [selection.category]);
+  const cityOptions = useMemo(() => getWeatherLocationCities(selection.category, selection.province), [selection.category, selection.province]);
+  const districtOptions = useMemo(() => getWeatherLocationDistricts(selection.category, selection.province, selection.city), [selection.category, selection.province, selection.city]);
+  const localVillageOptions = useMemo(
+    () => getWeatherLocationVillages(selection.category, selection.province, selection.city, selection.district),
+    [selection.category, selection.province, selection.city, selection.district],
+  );
+
+  useEffect(() => {
+    let active = true;
+
+    if (selection.category !== 'semarang' || !selection.district) {
+      setBmkgVillages([]);
+      setVillagesError(null);
+      setLoadingVillages(false);
+      return () => {
+        active = false;
+      };
+    }
+
+    const districtItem = getWeatherLocationItemByPath('semarang', 'Jawa Tengah', 'Kota Semarang', selection.district);
+    const districtCode = districtItem?.code;
+
+    if (!districtCode) {
+      setBmkgVillages([]);
+      setVillagesError(null);
+      setLoadingVillages(false);
+      return () => {
+        active = false;
+      };
+    }
+
+    setLoadingVillages(true);
+    setVillagesError(null);
+
+    fetch(`/api/weather-locations?district=${encodeURIComponent(districtCode)}`)
+      .then(async (response) => {
+        if (!response.ok) throw new Error('Gagal memuat daftar kelurahan dari BMKG.');
+        return response.json();
+      })
+      .then((payload) => {
+        if (!active) return;
+        const items = Array.isArray(payload?.items) ? payload.items : [];
+        const villages = items.filter((item: BmkgVillageLocation) => item?.level === 'village');
+        setBmkgVillages(villages);
+        setVillagesError(villages.length > 0 ? null : 'BMKG tidak mengembalikan daftar kelurahan. Menggunakan data cadangan lokal.');
+      })
+      .catch((err) => {
+        if (!active) return;
+        setBmkgVillages([]);
+        setVillagesError(err instanceof Error ? err.message : 'Gagal memuat daftar kelurahan BMKG.');
+      })
+      .finally(() => {
+        if (active) setLoadingVillages(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [selection.category, selection.district]);
+
+  useEffect(() => {
+    if (selection.category !== 'semarang') return;
+    const options = bmkgVillages.length > 0 ? bmkgVillages : localVillageOptions;
+    if (options.length === 0) return;
+    if (options.some((item) => item.code === selection.locationCode)) return;
+    setSelection((prev) => ({ ...prev, locationCode: options[0].code }));
+  }, [bmkgVillages, localVillageOptions, selection.category, selection.locationCode]);
+
+  const weatherCode = selection.locationCode;
+  const { data, loading, error } = useWeather(weatherCode);
+  const { sendCommand } = useControl();
+  const selectedLabel = useMemo(() => data?.location || resolveWeatherLocationPath(weatherCode), [data?.location, weatherCode]);
+  const canSave = Boolean(updateSettings) && weatherCode !== (settings?.location || locationCode || DEFAULT_WEATHER_LOCATION_CODE);
+
+  const updateSelection = (patch: Partial<WeatherSelection>) => {
+    setSelection((prev) => resolveSelection(patch, prev));
+  };
+
+  const handleCategoryChange = (category: WeatherLocationCategory) => {
+    const categoryItems = getWeatherLocationsByCategory(category).filter((item) => item.ready !== false);
+    const provinces = uniqueValues(categoryItems.map((item) => item.province));
+    const province = provinces[0] || 'Jawa Tengah';
+    const cities = uniqueValues(categoryItems.filter((item) => item.province === province).map((item) => item.city));
+    const city = cities[0] || 'Kota Semarang';
+    const districts = uniqueValues(
+      categoryItems.filter((item) => item.province === province && item.city === city).map((item) => item.district || (item.level === 'district' ? item.label : '')),
+    );
+    const district = districts[0] || '';
+
+    setSelection({
+      category,
+      province,
+      city,
+      district,
+      locationCode: pickFirstLocationCode(category, province, city, district),
+    });
+  };
+
+  const handleProvinceChange = (province: string) => updateSelection({ province, city: '', district: '' });
+  const handleCityChange = (city: string) => updateSelection({ city, district: '' });
+  const handleDistrictChange = (district: string) => {
+    const districtItem = getWeatherLocationItemByPath(selection.category, selection.province, selection.city, district);
+    setSelection((prev) =>
+      resolveSelection(
+        {
+          district,
+          locationCode: districtItem?.code || prev.locationCode,
+        },
+        prev,
+      ),
+    );
+  };
+
+  const handleVillageChange = (code: string) => updateSelection({ locationCode: code });
+
+  const handleSave = async () => {
+    if (!updateSettings) return;
+    setSaveState('saving');
+    try {
+      const normalized = await updateSettings({ location: weatherCode });
+      persistStoredSelection(normalized.location);
+      setSelection((prev) => ({ ...prev, locationCode: normalized.location }));
+
+      await sendCommand('settings_sync', undefined, {
+        location: normalized.location,
+        plant_phase: normalized.plant_phase,
+        temp_threshold_low: normalized.temp_threshold_low,
+        temp_threshold_high: normalized.temp_threshold_high,
+        humidity_threshold_low: normalized.humidity_threshold_low,
+        humidity_threshold_high: normalized.humidity_threshold_high,
+        soil_threshold_low: normalized.soil_threshold_low,
+        soil_threshold_high: normalized.soil_threshold_high,
+        soil_threshold_critical: normalized.soil_threshold_critical,
+        watering_time: normalized.watering_time,
+        watering_duration: normalized.watering_duration,
+        watering_enabled: normalized.watering_enabled,
+      }).catch(() => undefined);
+
+      await sendCommand('schedule_set', undefined, {
+        watering_time: normalized.watering_time,
+        watering_duration: normalized.watering_duration,
+        schedule_enabled: normalized.watering_enabled,
+      }).catch(() => undefined);
+
+      recordActivity({
+        source: 'weather',
+        type: 'weather_location_saved',
+        title: 'Lokasi cuaca disimpan',
+        message: `Lokasi prakiraan disetel ke ${selectedLabel}.`,
+        details: { location: normalized.location, label: selectedLabel },
+      });
+      setSaveState('saved');
+      setTimeout(() => setSaveState('idle'), 2000);
+    } catch {
+      setSaveState('idle');
+    }
+  };
+
+  const currentCategoryLabel = WEATHER_LOCATION_CATEGORIES.find((item) => item.id === selection.category)?.label || 'Lokasi';
+  const villageOptions = selection.category === 'semarang' ? (bmkgVillages.length > 0 ? bmkgVillages : localVillageOptions) : localVillageOptions;
+  const isSemarang = selection.category === 'semarang';
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3 mb-6">
-        <CloudSun className="w-6 h-6 text-emerald-600" />
-        <h2 className="text-2xl font-bold text-gray-800">Prakiraan Cuaca</h2>
-      </div>
-
-      <div className="max-w-2xl">
-        <WeatherCard data={data} loading={loading} />
-      </div>
-
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100"
-      >
-        <h3 className="text-lg font-semibold text-gray-800 mb-4">Informasi Cuaca</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-          <div className="p-4 bg-emerald-50 rounded-xl">
-            <h4 className="font-semibold text-emerald-800 mb-2">🌱 Dampak ke Pertanian</h4>
-            <p className="text-emerald-600">Data cuaca BMKG membantu menentukan jadwal penyiraman optimal dan memprediksi risiko hama.</p>
-          </div>
-          <div className="p-4 bg-blue-50 rounded-xl">
-            <h4 className="font-semibold text-blue-800 mb-2">💡 Tips Berdasarkan Cuaca</h4>
-            <p className="text-blue-600">AI Assistant akan memberikan rekomendasi perawatan berdasarkan kondisi cuaca terkini.</p>
-          </div>
+      <div className="mb-2 flex items-center gap-3">
+        <CloudSun className="h-6 w-6 text-emerald-600" />
+        <div>
+          <h2 className="text-2xl font-bold text-gray-800">Prakiraan Cuaca</h2>
+          <p className="text-sm text-slate-500">
+            Pilih wilayah Jawa Tengah atau Semarang, simpan, lalu lokasi itu akan dipakai Dashboard, AI, dan tampilan cuaca.
+          </p>
         </div>
-      </motion.div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.05fr_0.95fr]">
+        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="space-y-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm sm:p-6">
+          <div className="flex items-center gap-3">
+            <MapPin className="h-5 w-5 text-emerald-600" />
+            <div>
+              <h3 className="text-lg font-semibold text-gray-800">Set lokasi prakiraan</h3>
+              <p className="text-sm text-gray-500">Kategori aktif: {currentCategoryLabel}</p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {WEATHER_LOCATION_CATEGORIES.map((category) => (
+              <button
+                key={category.id}
+                type="button"
+                onClick={() => handleCategoryChange(category.id)}
+                className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
+                  selection.category === category.id
+                    ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+                    : 'border-gray-200 bg-gray-50 text-gray-600 hover:border-emerald-200'
+                }`}
+              >
+                {category.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div>
+              <label className="mb-2 block text-sm font-medium text-gray-700">Provinsi</label>
+              <div className="relative">
+                <select
+                  value={selection.province}
+                  onChange={(e) => handleProvinceChange(e.target.value)}
+                  className="w-full appearance-none rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 pr-10 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                >
+                  {provinceOptions.map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-gray-700">Kota / Kabupaten</label>
+              <div className="relative">
+                <select
+                  value={selection.city}
+                  onChange={(e) => handleCityChange(e.target.value)}
+                  className="w-full appearance-none rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 pr-10 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                >
+                  {cityOptions.map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-gray-700">Kecamatan</label>
+              <div className="relative">
+                <select
+                  value={selection.district}
+                  onChange={(e) => handleDistrictChange(e.target.value)}
+                  className="w-full appearance-none rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 pr-10 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                >
+                  {districtOptions.map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-gray-700">Kelurahan / Desa</label>
+              <div className="relative">
+                <select
+                  value={weatherCode}
+                  onChange={(e) => handleVillageChange(e.target.value)}
+                  disabled={isSemarang && loadingVillages && villageOptions.length === 0}
+                  className="w-full appearance-none rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 pr-10 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 disabled:cursor-wait disabled:opacity-60"
+                >
+                  {villageOptions.length > 0 ? (
+                    villageOptions.map((item) => (
+                      <option key={item.code} value={item.code}>
+                        {item.label}
+                      </option>
+                    ))
+                  ) : (
+                    <option value={weatherCode}>{selection.district || selection.city}</option>
+                  )}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              </div>
+            </div>
+          </div>
+
+          {isSemarang && (
+            <div className="rounded-xl border border-sky-100 bg-sky-50 p-4 text-sm text-sky-900">
+              <p className="font-semibold">Data BMKG Semarang</p>
+              <p className="mt-1 text-sky-800">
+                Kecamatan dan kelurahan dimuat dari BMKG per kecamatan, lalu pilihan yang tersedia disinkronkan ke Dashboard dan AI.
+              </p>
+              <p className="mt-2 text-xs text-sky-700">
+                {loadingVillages ? 'Memuat daftar kelurahan dari BMKG...' : villagesError || 'Daftar kelurahan aktif sesuai data BMKG.'}
+              </p>
+            </div>
+          )}
+
+          <div className="flex flex-col gap-3 rounded-xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-900 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="font-semibold">Lokasi yang disimpan</p>
+              <p className="mt-1 text-emerald-800">{selectedLabel}</p>
+            </div>
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={!canSave || saveState === 'saving'}
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-3 font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Save size={16} />
+              {saveState === 'saving' ? 'Menyimpan...' : 'Simpan Lokasi'}
+            </button>
+          </div>
+
+          <p className="text-sm text-gray-500">
+            {saveState === 'saved' ? 'Lokasi cuaca berhasil disimpan.' : 'Simpan lokasi ini agar Dashboard, prakiraan, dan AI memakai wilayah yang sama.'}
+          </p>
+        </motion.div>
+
+        <div className="space-y-6">
+          <WeatherMotionForecast data={data} loading={loading} error={error} locationLabel={selectedLabel} />
+
+          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
+            <div className="mb-4 flex items-center gap-3">
+              <Navigation2 className="h-5 w-5 text-emerald-600" />
+              <h3 className="text-lg font-semibold text-gray-800">Ringkasan lokasi</h3>
+            </div>
+            <div className="rounded-xl bg-slate-50 p-4 text-sm">
+              <p className="text-xs uppercase tracking-wide text-slate-500">Wilayah terpilih</p>
+              <p className="mt-1 font-semibold text-slate-900">{selectedLabel}</p>
+            </div>
+          </motion.div>
+
+          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
+            <h3 className="mb-4 text-lg font-semibold text-gray-800">Informasi Cuaca</h3>
+            <div className="grid grid-cols-1 gap-4 text-sm md:grid-cols-2">
+              <div className="rounded-xl bg-emerald-50 p-4">
+                <h4 className="mb-2 font-semibold text-emerald-800">🌱 Dampak ke Pertanian</h4>
+                <p className="text-emerald-600">Data cuaca BMKG membantu menentukan jadwal penyiraman optimal dan memprediksi risiko hama.</p>
+              </div>
+              <div className="rounded-xl bg-blue-50 p-4">
+                <h4 className="mb-2 font-semibold text-blue-800">💡 Tips Berdasarkan Cuaca</h4>
+                <p className="text-blue-600">AI Assistant akan memberikan rekomendasi perawatan berdasarkan kondisi cuaca terkini.</p>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      </div>
     </div>
   );
 }

@@ -7,6 +7,7 @@ export interface PlantPhaseProfile {
   soilRange: [number, number];
   criticalSoil: number;
   tempRange: [number, number];
+  humidityRange: [number, number];
   wateringHint: string;
   aiGuidance: string;
 }
@@ -41,6 +42,7 @@ export const PLANT_PHASE_PROFILES: Record<PlantPhase, PlantPhaseProfile> = {
     soilRange: [45, 75],
     criticalSoil: 35,
     tempRange: [22, 34],
+    humidityRange: [60, 85],
     wateringHint: 'Pertahankan kelembapan tanah stabil dan hindari kekeringan mendadak.',
     aiGuidance: 'Berikan saran perawatan yang menekankan pertumbuhan organ vegetatif, stabilitas air, dan pemulihan daun.',
   },
@@ -51,6 +53,7 @@ export const PLANT_PHASE_PROFILES: Record<PlantPhase, PlantPhaseProfile> = {
     soilRange: [50, 70],
     criticalSoil: 40,
     tempRange: [24, 32],
+    humidityRange: [55, 80],
     wateringHint: 'Jaga air cukup, tetapi jangan sampai media terlalu becek agar fase berbunga tetap optimal.',
     aiGuidance: 'Berikan saran perawatan yang fokus pada pembungaan, pembentukan hasil, dan pengendalian stres air.',
   },
@@ -70,9 +73,12 @@ export function getPhaseDefaults(value: unknown) {
     plant_phase: profile.phase,
     temp_threshold_low: profile.tempRange[0],
     temp_threshold_high: profile.tempRange[1],
+    humidity_threshold_low: profile.humidityRange[0],
+    humidity_threshold_high: profile.humidityRange[1],
     soil_threshold_low: profile.soilRange[0],
     soil_threshold_high: profile.soilRange[1],
     soil_threshold_critical: profile.criticalSoil,
+    humidityRange: profile.humidityRange,
   };
 }
 

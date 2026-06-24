@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Settings as SettingsIcon, User, Sprout, MapPin, Wifi, Clock3, CalendarDays, Shield, Bell } from 'lucide-react';
+import { Settings as SettingsIcon, User, Sprout, Wifi, CalendarDays, SlidersHorizontal, Droplets, Thermometer, MapPinned } from 'lucide-react';
 import { useSettings, Settings as SettingsType } from '../hooks/useSettings';
 import { useControl } from '../hooks/useControl';
 import { getPhaseDefaults, getPlantPhaseProfile, formatRange } from '../lib/plantPhase';
+import { recordActivity } from '../lib/activityLog';
 
 const phaseOptions = [
   { id: 'vegetatif', icon: '🌱' },
@@ -28,7 +29,7 @@ export function SettingsPage() {
   const currentPhase = (formData.plant_phase || settings?.plant_phase || 'vegetatif') as 'vegetatif' | 'generatif';
   const phaseProfile = getPlantPhaseProfile(currentPhase);
 
-  const updateField = (field: keyof SettingsType, value: any) => {
+  const updateField = (field: keyof SettingsType, value: unknown) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
@@ -40,28 +41,73 @@ export function SettingsPage() {
       plant_phase: phase,
       crop_mode: phase,
     }));
+    recordActivity({
+      source: 'settings',
+      type: 'phase_change',
+      title: 'Fase tanaman diubah',
+      message: `Fase diatur ke ${phase === 'vegetatif' ? 'Vegetatif' : 'Generatif'}.`,
+      details: { phase },
+    });
   };
 
   const handleSave = async () => {
     setSaveStatus('saving');
     try {
-      const payload = {
+      const payload: Partial<SettingsType> = {
         ...formData,
         plant_phase: currentPhase,
         crop_mode: currentPhase,
+        location: String(formData.location ?? settings?.location ?? '').trim() || settings?.location || '33.74.07.1010',
         watering_time: formData.watering_time || settings?.watering_time || '06:00',
         watering_duration: Number(formData.watering_duration ?? settings?.watering_duration ?? 10),
         watering_enabled: Boolean(formData.watering_enabled ?? settings?.watering_enabled ?? true),
-      } as Partial<SettingsType>;
+        temp_threshold_low: Number(formData.temp_threshold_low ?? settings?.temp_threshold_low ?? phaseProfile.tempRange[0]),
+        temp_threshold_high: Number(formData.temp_threshold_high ?? settings?.temp_threshold_high ?? phaseProfile.tempRange[1]),
+        humidity_threshold_low: Number(formData.humidity_threshold_low ?? settings?.humidity_threshold_low ?? phaseProfile.humidityRange[0]),
+        humidity_threshold_high: Number(formData.humidity_threshold_high ?? settings?.humidity_threshold_high ?? phaseProfile.humidityRange[1]),
+        soil_threshold_low: Number(formData.soil_threshold_low ?? settings?.soil_threshold_low ?? phaseProfile.soilRange[0]),
+        soil_threshold_high: Number(formData.soil_threshold_high ?? settings?.soil_threshold_high ?? phaseProfile.soilRange[1]),
+        soil_threshold_critical: Number(formData.soil_threshold_critical ?? settings?.soil_threshold_critical ?? phaseProfile.criticalSoil),
+      };
 
-      await updateSettings(payload);
+      const normalized = await updateSettings(payload);
+
+      await sendCommand('settings_sync', undefined, {
+        location: normalized.location,
+        plant_phase: normalized.plant_phase,
+        temp_threshold_low: normalized.temp_threshold_low,
+        temp_threshold_high: normalized.temp_threshold_high,
+        humidity_threshold_low: normalized.humidity_threshold_low,
+        humidity_threshold_high: normalized.humidity_threshold_high,
+        soil_threshold_low: normalized.soil_threshold_low,
+        soil_threshold_high: normalized.soil_threshold_high,
+        soil_threshold_critical: normalized.soil_threshold_critical,
+        watering_time: normalized.watering_time,
+        watering_duration: normalized.watering_duration,
+        watering_enabled: normalized.watering_enabled,
+      }).catch(() => undefined);
 
       await sendCommand('schedule_set', undefined, {
-        watering_time: payload.watering_time,
-        watering_duration: payload.watering_duration,
-        schedule_enabled: payload.watering_enabled,
+        watering_time: normalized.watering_time,
+        watering_duration: normalized.watering_duration,
+        schedule_enabled: normalized.watering_enabled,
+      }).catch(() => undefined);
+
+      recordActivity({
+        source: 'settings',
+        type: 'settings_saved',
+        title: 'Pengaturan disimpan',
+        message: `Fase ${normalized.plant_phase} dan ambang batas sensor berhasil diperbarui.`,
+        details: {
+          phase: normalized.plant_phase,
+          location: normalized.location,
+          temp: [normalized.temp_threshold_low, normalized.temp_threshold_high],
+          humidity: [normalized.humidity_threshold_low, normalized.humidity_threshold_high],
+          soil: [normalized.soil_threshold_low, normalized.soil_threshold_high, normalized.soil_threshold_critical],
+        },
       });
 
+      setFormData(normalized);
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus('idle'), 2000);
     } catch {
@@ -77,6 +123,13 @@ export function SettingsPage() {
       setWifiStatus('sent');
       setWifiSsid('');
       setWifiPassword('');
+      recordActivity({
+        source: 'settings',
+        type: 'wifi_update',
+        title: 'SSID WiFi dikirim',
+        message: 'Kredensial WiFi dikirim ke ESP32.',
+        details: { ssid: wifiSsid.trim() },
+      });
       setTimeout(() => setWifiStatus('idle'), 2000);
     } catch (err) {
       setWifiError(err instanceof Error ? err.message : 'Gagal mengirim WiFi');
@@ -88,34 +141,40 @@ export function SettingsPage() {
     return <div className="p-6 text-gray-500">Memuat pengaturan...</div>;
   }
 
+  const humidityLow = formData.humidity_threshold_low ?? settings?.humidity_threshold_low ?? phaseProfile.humidityRange[0];
+  const humidityHigh = formData.humidity_threshold_high ?? settings?.humidity_threshold_high ?? phaseProfile.humidityRange[1];
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3 mb-6">
-        <SettingsIcon className="w-6 h-6 text-emerald-600" />
-        <h2 className="text-2xl font-bold text-gray-800">Pengaturan</h2>
+      <div className="mb-6 flex items-center gap-3">
+        <SettingsIcon className="h-6 w-6 text-emerald-600" />
+        <div>
+          <h2 className="text-2xl font-bold text-gray-800">Pengaturan</h2>
+          <p className="text-sm text-slate-500">Semua ambang batas utama disimpan di sini dan dipakai bersama Dashboard, AI, serta cuaca.</p>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-          <div className="flex items-center gap-3 mb-6">
-            <User className="w-5 h-5 text-emerald-600" />
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
+          <div className="mb-6 flex items-center gap-3">
+            <User className="h-5 w-5 text-emerald-600" />
             <h3 className="text-lg font-semibold text-gray-800">Profil Pengguna</h3>
           </div>
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Nama</label>
-              <input type="text" value={formData.user_name || ''} onChange={(e) => updateField('user_name', e.target.value)} className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500" />
+              <label className="mb-2 block text-sm font-medium text-gray-700">Nama</label>
+              <input type="text" value={formData.user_name || ''} onChange={(e) => updateField('user_name', e.target.value)} className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Email Gmail / Notifikasi</label>
-              <input type="email" value={formData.user_email || ''} onChange={(e) => updateField('user_email', e.target.value)} className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500" />
+              <label className="mb-2 block text-sm font-medium text-gray-700">Email Gmail / Notifikasi</label>
+              <input type="email" value={formData.user_email || ''} onChange={(e) => updateField('user_email', e.target.value)} className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20" />
             </div>
           </div>
         </motion.div>
 
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-          <div className="flex items-center gap-3 mb-6">
-            <Sprout className="w-5 h-5 text-emerald-600" />
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
+          <div className="mb-6 flex items-center gap-3">
+            <Sprout className="h-5 w-5 text-emerald-600" />
             <h3 className="text-lg font-semibold text-gray-800">Fase Tanaman</h3>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -125,91 +184,96 @@ export function SettingsPage() {
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
                 onClick={() => applyPhaseDefaults(phase.id)}
-                className={`p-4 rounded-xl border-2 transition-all ${currentPhase === phase.id ? 'border-emerald-500 bg-emerald-50' : 'border-gray-200 hover:border-emerald-200'}`}
+                className={`rounded-xl border-2 p-4 transition-all ${currentPhase === phase.id ? 'border-emerald-500 bg-emerald-50' : 'border-gray-200 hover:border-emerald-200'}`}
               >
-                <span className="text-2xl mb-2 block">{phase.icon}</span>
+                <span className="mb-2 block text-2xl">{phase.icon}</span>
                 <span className={`font-medium ${currentPhase === phase.id ? 'text-emerald-700' : 'text-gray-700'}`}>
                   {phase.id === 'vegetatif' ? 'Vegetatif' : 'Generatif'}
                 </span>
               </motion.button>
             ))}
           </div>
-          <div className="mt-4 rounded-xl bg-emerald-50 border border-emerald-100 p-4 text-sm text-emerald-900">
+          <div className="mt-5 rounded-xl bg-emerald-50 p-4 text-sm text-emerald-900">
             <p className="font-semibold">{phaseProfile.label}</p>
             <p className="mt-1 text-emerald-800">{phaseProfile.description}</p>
             <p className="mt-2 text-emerald-700">Rentang rekomendasi tanah: {formatRange(phaseProfile.soilRange)}</p>
+            <p className="mt-1 text-emerald-700">Rentang rekomendasi kelembapan udara: {phaseProfile.humidityRange[0]}%–{phaseProfile.humidityRange[1]}%</p>
           </div>
         </motion.div>
 
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-          <div className="flex items-center gap-3 mb-6">
-            <MapPin className="w-5 h-5 text-emerald-600" />
-            <h3 className="text-lg font-semibold text-gray-800">Batas Sensor Fase</h3>
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
+          <div className="mb-6 flex items-center gap-3">
+            <SlidersHorizontal className="h-5 w-5 text-emerald-600" />
+            <h3 className="text-lg font-semibold text-gray-800">Ambang Batas Sensor</h3>
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Suhu Rendah</label>
-              <input type="number" value={formData.temp_threshold_low ?? 22} onChange={(e) => updateField('temp_threshold_low', Number(e.target.value))} className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl" />
+
+          <div className="space-y-5">
+            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+              <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-700">
+                <Thermometer className="h-4 w-4 text-emerald-600" />
+                Suhu udara
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-xs text-slate-500">Batas bawah</label>
+                  <input type="number" value={formData.temp_threshold_low ?? settings?.temp_threshold_low ?? phaseProfile.tempRange[0]} onChange={(e) => updateField('temp_threshold_low', Number(e.target.value))} className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-slate-500">Batas atas</label>
+                  <input type="number" value={formData.temp_threshold_high ?? settings?.temp_threshold_high ?? phaseProfile.tempRange[1]} onChange={(e) => updateField('temp_threshold_high', Number(e.target.value))} className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3" />
+                </div>
+              </div>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Suhu Tinggi</label>
-              <input type="number" value={formData.temp_threshold_high ?? 34} onChange={(e) => updateField('temp_threshold_high', Number(e.target.value))} className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl" />
+
+            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+              <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-700">
+                <Droplets className="h-4 w-4 text-emerald-600" />
+                Kelembapan udara
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-xs text-slate-500">Batas bawah</label>
+                  <input type="number" value={formData.humidity_threshold_low ?? settings?.humidity_threshold_low ?? phaseProfile.humidityRange[0]} onChange={(e) => updateField('humidity_threshold_low', Number(e.target.value))} className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-slate-500">Batas atas</label>
+                  <input type="number" value={formData.humidity_threshold_high ?? settings?.humidity_threshold_high ?? phaseProfile.humidityRange[1]} onChange={(e) => updateField('humidity_threshold_high', Number(e.target.value))} className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3" />
+                </div>
+              </div>
+              <p className="mt-2 text-xs text-slate-500">Rentang aktif: {humidityLow}%–{humidityHigh}%</p>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Batas Bawah Soil</label>
-              <input type="number" value={formData.soil_threshold_low ?? 45} onChange={(e) => updateField('soil_threshold_low', Number(e.target.value))} className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Batas Atas Soil</label>
-              <input type="number" value={formData.soil_threshold_high ?? 75} onChange={(e) => updateField('soil_threshold_high', Number(e.target.value))} className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Batas Kritis Soil</label>
-              <input type="number" value={formData.soil_threshold_critical ?? 35} onChange={(e) => updateField('soil_threshold_critical', Number(e.target.value))} className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">pH Minimum</label>
-              <input type="number" step="0.1" value={formData.ph_min ?? 5.5} onChange={(e) => updateField('ph_min', Number(e.target.value))} className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl" />
+
+            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+              <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-700">
+                <MapPinned className="h-4 w-4 text-emerald-600" />
+                Kelembapan tanah
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="mb-1 block text-xs text-slate-500">Batas bawah</label>
+                  <input type="number" value={formData.soil_threshold_low ?? settings?.soil_threshold_low ?? phaseProfile.soilRange[0]} onChange={(e) => updateField('soil_threshold_low', Number(e.target.value))} className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-slate-500">Batas atas</label>
+                  <input type="number" value={formData.soil_threshold_high ?? settings?.soil_threshold_high ?? phaseProfile.soilRange[1]} onChange={(e) => updateField('soil_threshold_high', Number(e.target.value))} className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-slate-500">Kritis</label>
+                  <input type="number" value={formData.soil_threshold_critical ?? settings?.soil_threshold_critical ?? phaseProfile.criticalSoil} onChange={(e) => updateField('soil_threshold_critical', Number(e.target.value))} className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3" />
+                </div>
+              </div>
             </div>
           </div>
         </motion.div>
 
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }} className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-          <div className="flex items-center gap-3 mb-6">
-            <CalendarDays className="w-5 h-5 text-emerald-600" />
-            <h3 className="text-lg font-semibold text-gray-800">Jadwal Penyiraman</h3>
-          </div>
-
-          <div className="space-y-4">
-            <div className="flex items-center justify-between rounded-xl border border-gray-200 px-4 py-3">
-              <div>
-                <p className="font-medium text-gray-700">Aktifkan jadwal</p>
-                <p className="text-xs text-gray-500">Penyiraman otomatis berdasarkan waktu yang dipilih</p>
-              </div>
-              <input type="checkbox" checked={formData.watering_enabled ?? true} onChange={(e) => updateField('watering_enabled', e.target.checked)} className="h-5 w-5 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500" />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Jam Siram</label>
-                <input type="time" value={formData.watering_time || '06:00'} onChange={(e) => updateField('watering_time', e.target.value)} className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Durasi (detik)</label>
-                <input type="number" value={formData.watering_duration ?? 10} onChange={(e) => updateField('watering_duration', Number(e.target.value))} className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl" />
-              </div>
-            </div>
-          </div>
-        </motion.div>
-
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-          <div className="flex items-center gap-3 mb-6">
-            <Wifi className="w-5 h-5 text-emerald-600" />
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }} className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
+          <div className="mb-6 flex items-center gap-3">
+            <Wifi className="h-5 w-5 text-emerald-600" />
             <h3 className="text-lg font-semibold text-gray-800">Kirim WiFi ke ESP32</h3>
           </div>
-          <div className="space-y-4">
-            <input value={wifiSsid} onChange={(e) => setWifiSsid(e.target.value)} placeholder="SSID WiFi" className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl" />
-            <input value={wifiPassword} onChange={(e) => setWifiPassword(e.target.value)} placeholder="Password WiFi" type="password" className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl" />
+          <div className="space-y-3">
+            <input value={wifiSsid} onChange={(e) => setWifiSsid(e.target.value)} placeholder="SSID WiFi" className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3" />
+            <input value={wifiPassword} onChange={(e) => setWifiPassword(e.target.value)} placeholder="Password WiFi" type="password" className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3" />
             <button onClick={handleSendWifi} disabled={wifiStatus === 'sending' || controlLoading} className="w-full rounded-xl bg-emerald-600 px-4 py-3 font-semibold text-white disabled:opacity-50">
               {wifiStatus === 'sending' ? 'Mengirim...' : 'Kirim ke ESP32'}
             </button>
@@ -217,14 +281,25 @@ export function SettingsPage() {
           </div>
         </motion.div>
 
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }} className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-          <div className="flex items-center gap-3 mb-6">
-            <Bell className="w-5 h-5 text-emerald-600" />
-            <h3 className="text-lg font-semibold text-gray-800">Notifikasi AI</h3>
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
+          <div className="mb-6 flex items-center gap-3">
+            <CalendarDays className="h-5 w-5 text-emerald-600" />
+            <h3 className="text-lg font-semibold text-gray-800">Jadwal Penyiraman</h3>
           </div>
-          <p className="text-sm text-gray-600 leading-relaxed">
-            Saat kondisi tanaman masuk fase kritis, sistem akan membuat notifikasi dan mengirim email ke alamat yang tersimpan di profil pengguna. Histori notifikasi tampil di ikon lonceng pojok kanan atas.
-          </p>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="mb-2 block text-sm font-medium text-gray-700">Waktu siram</label>
+              <input type="time" value={formData.watering_time || settings?.watering_time || '06:00'} onChange={(e) => updateField('watering_time', e.target.value)} className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3" />
+            </div>
+            <div>
+              <label className="mb-2 block text-sm font-medium text-gray-700">Durasi (detik)</label>
+              <input type="number" value={formData.watering_duration ?? settings?.watering_duration ?? 10} onChange={(e) => updateField('watering_duration', Number(e.target.value))} className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3" />
+            </div>
+          </div>
+          <label className="mt-4 flex items-center gap-3 text-sm text-gray-700">
+            <input type="checkbox" checked={formData.watering_enabled ?? settings?.watering_enabled ?? true} onChange={(e) => updateField('watering_enabled', e.target.checked)} className="h-5 w-5 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500" />
+            Jadwal penyiraman aktif
+          </label>
         </motion.div>
       </div>
 
