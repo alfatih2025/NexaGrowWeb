@@ -197,12 +197,12 @@ function App() {
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="flex min-h-screen items-center justify-center text-center"
+          className="flex min-h-screen flex-col items-center justify-center text-center"
         >
           <motion.div
             animate={{ rotate: 360 }}
             transition={{ repeat: Infinity, duration: 2, ease: 'linear' }}
-            className="mx-auto mb-6 h-20 w-20 rounded-full border-4 border-emerald-200 border-t-emerald-500"
+            className="mb-6 h-20 w-20 rounded-full border-4 border-emerald-200 border-t-emerald-500"
           />
           <div>
             <h2 className="mb-2 text-2xl font-bold text-emerald-800">NexaGrow</h2>
