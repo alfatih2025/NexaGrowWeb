@@ -22,7 +22,7 @@ interface ChatInterfaceProps {
 }
 
 export function ChatInterface({ sensorData = null, settings = null, weatherData = null, variant = 'full' }: ChatInterfaceProps) {
-  const { messages, loading, error, sendMessage, connectionStatus, refreshConnectionStatus } = useChat();
+  const { messages, loading, error, sendMessage, clearMessages, connectionStatus, refreshConnectionStatus } = useChat();
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -158,6 +158,15 @@ export function ChatInterface({ sensorData = null, settings = null, weatherData 
             )}
             <button
               type="button"
+              onClick={() => void clearMessages()}
+              disabled={loading || messages.length === 0}
+              className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+              title="Hapus riwayat chat"
+            >
+              Hapus Chat
+            </button>
+            <button
+              type="button"
               onClick={refreshConnectionStatus}
               disabled={loading}
               className="rounded-lg border border-white/60 bg-white/80 p-2 text-gray-600 transition hover:bg-white disabled:opacity-50"
@@ -253,7 +262,7 @@ export function ChatInterface({ sensorData = null, settings = null, weatherData 
       </div>
 
       <form onSubmit={handleSubmit} className={footerClassName}>
-        <div className="flex items-end gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-3">
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}

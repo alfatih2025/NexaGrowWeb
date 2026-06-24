@@ -178,6 +178,11 @@ export default async function handler(req, res) {
       });
     }
 
+    if (req.method === 'DELETE') {
+      await supabase.from('chat_messages').delete().neq('id', '');
+      return res.status(200).json({ success: true });
+    }
+
     return res.status(405).json({ error: 'Method not allowed' });
   } catch (error) {
     return res.status(500).json({

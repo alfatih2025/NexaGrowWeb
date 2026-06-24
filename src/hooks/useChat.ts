@@ -139,6 +139,18 @@ export function useChat() {
     setConnectionStatus(status);
   }, []);
 
+  const clearMessages = useCallback(async () => {
+    persistMessages([]);
+    try {
+      await fetch('/api/chat', {
+        method: 'DELETE',
+        headers: buildApiHeaders({ 'Content-Type': 'application/json' }),
+      });
+    } catch {
+      // Ignore errors for remote clear; local history is already removed.
+    }
+  }, [persistMessages]);
+
   const fetchMessages = useCallback(async () => {
     try {
       const apiMessages = await fetchApiMessages();
@@ -208,6 +220,7 @@ export function useChat() {
     error,
     sendMessage,
     refetch: fetchMessages,
+    clearMessages,
     connectionStatus,
     refreshConnectionStatus,
   };
