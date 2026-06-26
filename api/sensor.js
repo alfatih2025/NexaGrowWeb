@@ -42,6 +42,11 @@ function normalizeRow(row) {
     watering_time: typeof row.watering_time === 'string' ? row.watering_time : null,
     watering_duration: toNumber(row.watering_duration, null),
     schedule_enabled: toBoolean(row.schedule_enabled, true),
+    formula_name: typeof row.formula_name === 'string' && row.formula_name.trim() ? row.formula_name.trim() : null,
+    formula_soil: typeof row.formula_soil === 'string' && row.formula_soil.trim() ? row.formula_soil.trim() : null,
+    formula_vpd: typeof row.formula_vpd === 'string' && row.formula_vpd.trim() ? row.formula_vpd.trim() : null,
+    formula_score: typeof row.formula_score === 'string' && row.formula_score.trim() ? row.formula_score.trim() : null,
+    soil_raw_dry: toNumber(row.soil_raw_dry, null),
     created_at: row.created_at ?? new Date().toISOString(),
   };
 }
@@ -93,6 +98,11 @@ export default async function handler(req, res) {
         watering_time: typeof body.watering_time === 'string' ? body.watering_time : null,
         watering_duration: toNumber(body.watering_duration, null),
         schedule_enabled: toBoolean(body.schedule_enabled, true),
+        formula_name: typeof body.formula_name === 'string' && body.formula_name.trim() ? body.formula_name.trim() : null,
+        formula_soil: typeof body.formula_soil === 'string' && body.formula_soil.trim() ? body.formula_soil.trim() : null,
+        formula_vpd: typeof body.formula_vpd === 'string' && body.formula_vpd.trim() ? body.formula_vpd.trim() : null,
+        formula_score: typeof body.formula_score === 'string' && body.formula_score.trim() ? body.formula_score.trim() : null,
+        soil_raw_dry: toNumber(body.soil_raw_dry, null),
       };
 
       const { data, error } = await supabase

@@ -34,6 +34,63 @@ const ARDUINO_FORMULA_REFERENCE = [
   '   OFF jika k_tanah >= atas atau hujan >= 5 atau suhu <= 20',
 ].join('\n');
 
+function normalizeFormulaField(value) {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function buildChatMetadata(latestSensor, latestSettings, role) {
+  return {
+    role,
+    sensor_snapshot: {
+      device_id: latestSensor?.device_id ?? null,
+      temperature: latestSensor?.temperature ?? null,
+      humidity: latestSensor?.humidity ?? null,
+      soil_moisture: latestSensor?.soil_moisture ?? null,
+      rain: latestSensor?.rain ?? null,
+      score: latestSensor?.score ?? null,
+      soil_score: latestSensor?.soil_score ?? null,
+      vdp_score: latestSensor?.vdp_score ?? null,
+      rain_score: latestSensor?.rain_score ?? null,
+      vpd: latestSensor?.vpd ?? null,
+      duration_estimate: latestSensor?.duration_estimate ?? null,
+      pump_status: latestSensor?.pump_status ?? false,
+      led_status: latestSensor?.led_status ?? false,
+      device_mode: latestSensor?.device_mode ?? null,
+      wifi_status: latestSensor?.wifi_status ?? null,
+      threshold_kritis: latestSensor?.threshold_kritis ?? null,
+      threshold_atas: latestSensor?.threshold_atas ?? null,
+      threshold_bawah: latestSensor?.threshold_bawah ?? null,
+      watering_time: latestSensor?.watering_time ?? null,
+      watering_duration: latestSensor?.watering_duration ?? null,
+      schedule_enabled: latestSensor?.schedule_enabled ?? null,
+      formula_name: normalizeFormulaField(latestSensor?.formula_name),
+      formula_soil: normalizeFormulaField(latestSensor?.formula_soil),
+      formula_vpd: normalizeFormulaField(latestSensor?.formula_vpd),
+      formula_score: normalizeFormulaField(latestSensor?.formula_score),
+      soil_raw_dry: latestSensor?.soil_raw_dry ?? null,
+      created_at: latestSensor?.created_at ?? null,
+    },
+    settings_snapshot: {
+      plant_phase: latestSettings?.plant_phase ?? latestSettings?.crop_mode ?? null,
+      location: latestSettings?.location ?? null,
+      soil_threshold_low: latestSettings?.soil_threshold_low ?? latestSettings?.soil_moisture_threshold ?? null,
+      soil_threshold_high: latestSettings?.soil_threshold_high ?? null,
+      soil_threshold_critical: latestSettings?.soil_threshold_critical ?? null,
+      temp_threshold_low: latestSettings?.temp_threshold_low ?? null,
+      temp_threshold_high: latestSettings?.temp_threshold_high ?? null,
+      humidity_threshold_low: latestSettings?.humidity_threshold_low ?? null,
+      humidity_threshold_high: latestSettings?.humidity_threshold_high ?? null,
+      watering_time: latestSettings?.watering_time ?? null,
+      watering_duration: latestSettings?.watering_duration ?? null,
+      watering_enabled: latestSettings?.watering_enabled ?? null,
+      auto_report: latestSettings?.auto_report ?? null,
+      report_time: latestSettings?.report_time ?? null,
+      user_name: latestSettings?.user_name ?? null,
+      user_email: latestSettings?.user_email ?? null,
+    },
+  };
+}
+
 
 function buildSystemPrompt(latestSensor, settings = {}) {
   const phase = String(settings.plant_phase || settings.crop_mode || 'vegetatif').trim().toLowerCase() === 'generatif'
@@ -97,12 +154,6 @@ export default async function handler(req, res) {
     if (req.method === 'POST') {
       const { message, user_id = 'anonymous' } = req.body || {};
 
-      await supabase.from('chat_messages').insert({
-        user_id,
-        role: 'user',
-        content: message,
-      });
-
       const { data: latestSensor } = await supabase
         .from('sensor_data')
         .select('*')
@@ -115,6 +166,15 @@ export default async function handler(req, res) {
         .select('*')
         .eq('id', 1)
         .maybeSingle();
+
+      const userChatMetadata = buildChatMetadata(latestSensor, latestSettings || {}, 'user');
+
+      await supabase.from('chat_messages').insert({
+        user_id,
+        role: 'user',
+        content: message,
+        metadata: userChatMetadata,
+      });
 
       const systemPrompt = buildSystemPrompt(latestSensor, latestSettings || {});
 
@@ -169,6 +229,7 @@ export default async function handler(req, res) {
         user_id: 'assistant_001',
         role: 'assistant',
         content: aiResponse,
+        metadata: buildChatMetadata(latestSensor, latestSettings || {}, 'assistant'),
       }).select().single();
 
       return res.status(200).json({

@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { Settings as SettingsIcon, User, Sprout, Wifi, CalendarDays, SlidersHorizontal, Droplets, Thermometer, MapPinned } from 'lucide-react';
 import { useSettings, Settings as SettingsType } from '../hooks/useSettings';
 import { useControl } from '../hooks/useControl';
+import { useWeather } from '../hooks/useWeather';
 import { getPhaseDefaults, getPlantPhaseProfile, formatRange } from '../lib/plantPhase';
 import { recordActivity } from '../lib/activityLog';
 
@@ -25,6 +26,9 @@ export function SettingsPage() {
   useEffect(() => {
     if (settings) setFormData(settings);
   }, [settings]);
+
+  const weatherLocation = String(formData.location || settings?.location || '33.74.07.1010');
+  const { data: weatherData } = useWeather(weatherLocation);
 
   const currentPhase = (formData.plant_phase || settings?.plant_phase || 'vegetatif') as 'vegetatif' | 'generatif';
   const phaseProfile = getPlantPhaseProfile(currentPhase);
@@ -74,6 +78,10 @@ export function SettingsPage() {
 
       await sendCommand('settings_sync', undefined, {
         location: normalized.location,
+        weather_location: normalized.location,
+        weather_condition: weatherData?.current.weather,
+        weather_rain_chance: weatherData?.current.rain_chance,
+        weather_temperature: weatherData?.current.temperature,
         plant_phase: normalized.plant_phase,
         temp_threshold_low: normalized.temp_threshold_low,
         temp_threshold_high: normalized.temp_threshold_high,
@@ -114,6 +122,7 @@ export function SettingsPage() {
       setSaveStatus('idle');
     }
   };
+
 
   const handleSendWifi = async () => {
     setWifiStatus('sending');
@@ -199,6 +208,7 @@ export function SettingsPage() {
             <p className="mt-2 text-emerald-700">Rentang rekomendasi tanah: {formatRange(phaseProfile.soilRange)}</p>
             <p className="mt-1 text-emerald-700">Rentang rekomendasi kelembapan udara: {phaseProfile.humidityRange[0]}%–{phaseProfile.humidityRange[1]}%</p>
           </div>
+
         </motion.div>
 
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">

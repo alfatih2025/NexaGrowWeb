@@ -1,5 +1,5 @@
 import { requireApiAuth, authError } from './_auth.js';
-import { sendOpenRouterMessage } from './_openrouter.js';
+import { buildFormulaReference, isArduinoFormulaRequest, sendOpenRouterMessage } from './_openrouter.js';
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -15,6 +15,19 @@ export default async function handler(req, res) {
     const { message, history = [], sensorContext = null } = req.body || {};
     if (!message || typeof message !== 'string') {
       return res.status(400).json({ error: 'Message is required' });
+    }
+
+    if (isArduinoFormulaRequest(message)) {
+      const formulaContent = [
+        '## Rumus Arduino NexaGrow',
+        '',
+        buildFormulaReference(),
+      ].join('\n');
+      return res.status(200).json({
+        content: formulaContent,
+        model: 'local-formula-response',
+        checkedAt: new Date().toISOString(),
+      });
     }
 
     const result = await sendOpenRouterMessage({

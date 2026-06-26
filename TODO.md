@@ -1,0 +1,7 @@
+- [ ] Revisi `src/pages/SettingsPage.tsx`: hapus seluruh section “Simulasi Fase” dan tombol “Kirim Simulasi ke Arduino”
+- [ ] Revisi `Boardcode/arduino.cpp`:
+  - [ ] Sertakan `mode_simulasi` (modeSimulasi) dan `fase_tanaman` (faseVegetatif -> generatif/vegetatif) pada payload telemetry `kirimDatasensorJSON`
+- [ ] Revisi `Boardcode/esp32.cpp`:
+  - [ ] Parse field telemetry dari Arduino untuk `mode_simulasi` dan `fase_tanaman`
+  - [ ] Masukkan field tersebut ke payload MQTT `sproutai/sensor/data` agar web bisa sinkron
+- [ ] Pastikan web parsing MQTT sudah mendukung field baru (jika perlu ubah `src/services/mqtt.ts` + tipe `MqttSensorSnapshot`)

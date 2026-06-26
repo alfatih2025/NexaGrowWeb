@@ -104,6 +104,11 @@ function App() {
       watering_time: live?.watering_time ?? fallback?.watering_time ?? null,
       watering_duration: live?.watering_duration ?? fallback?.watering_duration ?? null,
       schedule_enabled: live?.schedule_enabled ?? fallback?.schedule_enabled ?? true,
+      formula_name: live?.formula_name ?? fallback?.formula_name ?? null,
+      formula_soil: live?.formula_soil ?? fallback?.formula_soil ?? null,
+      formula_vpd: live?.formula_vpd ?? fallback?.formula_vpd ?? null,
+      formula_score: live?.formula_score ?? fallback?.formula_score ?? null,
+      soil_raw_dry: live?.soil_raw_dry ?? fallback?.soil_raw_dry ?? null,
       created_at: live?.updatedAt ?? fallback?.created_at ?? new Date().toISOString(),
     };
   }, [sensorData, mqttStatus.sensorSnapshot]);

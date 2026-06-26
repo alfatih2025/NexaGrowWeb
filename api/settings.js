@@ -55,7 +55,7 @@ function normalizePhase(value) {
 
 function normalizeLocation(value) {
   const raw = String(value || '').trim();
-  return /^\d{2}(?:\.\d{2}){1,3}$/.test(raw) ? raw : DEFAULT_LOCATION_CODE;
+  return /^\d{2}(?:\.\d{2}){1,2}(?:\.\d{1,4})?$/.test(raw) ? raw : DEFAULT_LOCATION_CODE;
 }
 
 function phaseDefaults(phase) {

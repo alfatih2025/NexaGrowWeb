@@ -69,9 +69,16 @@ export interface MqttSensorSnapshot {
   watering_time: string | null;
   watering_duration: number | null;
   schedule_enabled: boolean;
+  formula_name: string | null;
+  formula_soil: string | null;
+  formula_vpd: string | null;
+  formula_score: string | null;
+  soil_raw_dry: number | null;
   updatedAt: string | null;
   sourceTopic: string | null;
 }
+
+
 
 export interface MqttStatusSnapshot {
   brokerUrl: string;
@@ -120,6 +127,11 @@ const emptySensorSnapshot: MqttSensorSnapshot = {
   watering_time: null,
   watering_duration: null,
   schedule_enabled: true,
+  formula_name: null,
+  formula_soil: null,
+  formula_vpd: null,
+  formula_score: null,
+  soil_raw_dry: null,
   updatedAt: null,
   sourceTopic: null,
 };
@@ -305,11 +317,13 @@ function normalizeJsonSensorPayload(payload: string): SensorDelta | null {
       humidity: parseNumeric(obj.humidity ?? obj.kelembapan_udara),
       soil_moisture: parseNumeric(obj.soil_moisture ?? obj.soil ?? obj.tanah),
       rain: parseNumeric(obj.rain ?? obj.hujan),
+      // support Arduino field names: score_total(score), vpd, soil_score, vdp_score, rain_score
       score: parseNumeric(obj.score ?? obj.score_total ?? obj.skor),
       soil_score: parseNumeric(obj.soil_score ?? obj.skor_tanah),
       vdp_score: parseNumeric(obj.vdp_score ?? obj.skor_vdp),
       rain_score: parseNumeric(obj.rain_score ?? obj.skor_hujan),
-      vpd: parseNumeric(obj.vpd),
+      vpd: parseNumeric(obj.vpd ?? obj.vdp_value ?? obj.vapor_pressure_deficit),
+
       duration_estimate: parseNumeric(obj.duration_estimate ?? obj.duration ?? obj.durasi),
       pump_status: parseBoolean(obj.pump_status),
       led_status: parseBoolean(obj.led_status ?? obj.feeder_status),
@@ -321,6 +335,11 @@ function normalizeJsonSensorPayload(payload: string): SensorDelta | null {
       watering_time: typeof obj.watering_time === 'string' ? obj.watering_time : undefined,
       watering_duration: parseNumeric(obj.watering_duration),
       schedule_enabled: parseBoolean(obj.schedule_enabled),
+      formula_name: typeof obj.formula_name === 'string' ? obj.formula_name : undefined,
+      formula_soil: typeof obj.formula_soil === 'string' ? obj.formula_soil : undefined,
+      formula_vpd: typeof obj.formula_vpd === 'string' ? obj.formula_vpd : undefined,
+      formula_score: typeof obj.formula_score === 'string' ? obj.formula_score : undefined,
+      soil_raw_dry: parseNumeric(obj.soil_raw_dry),
     };
   } catch {
     return null;
@@ -446,6 +465,7 @@ function connectOnce() {
   if (client || !BROKER_URL) return client;
 
   if (!isWebSocketBroker(BROKER_URL)) {
+    console.error('[MQTT] invalid broker URL', BROKER_URL);
     setSnapshot({
       mqttError: 'VITE_BROKER_URL harus ws:// atau wss:// untuk browser.',
       mqttConnecting: false,
@@ -464,6 +484,7 @@ function connectOnce() {
   });
 
   client.on('connect', () => {
+    console.debug('[MQTT] connected to broker', BROKER_URL);
     setSnapshot({
       mqttConnected: true,
       mqttConnecting: false,
@@ -480,6 +501,7 @@ function connectOnce() {
   });
 
   client.on('reconnect', () => {
+    console.debug('[MQTT] reconnecting');
     setSnapshot({
       mqttConnected: false,
       mqttConnecting: true,
@@ -488,6 +510,7 @@ function connectOnce() {
   });
 
   client.on('offline', () => {
+    console.warn('[MQTT] offline');
     setSnapshot({
       mqttConnected: false,
       mqttConnecting: false,
@@ -496,6 +519,7 @@ function connectOnce() {
   });
 
   client.on('close', () => {
+    console.warn('[MQTT] connection closed');
     setSnapshot({
       mqttConnected: false,
       mqttConnecting: false,
@@ -503,6 +527,7 @@ function connectOnce() {
   });
 
   client.on('error', (err: Error) => {
+    console.error('[MQTT] error', err.message);
     setSnapshot({
       mqttConnected: false,
       mqttConnecting: false,
@@ -571,8 +596,16 @@ export function publishMqtt(
 ) {
   const currentClient = connectOnce();
   if (!currentClient) {
+    console.error('[MQTT] client unavailable for publish', topic, payload);
     return Promise.reject(new Error('MQTT client belum tersedia'));
   }
+
+  console.debug('[MQTT] publish', {
+    topic,
+    payload,
+    connected: currentClient.connected,
+    options,
+  });
 
   return new Promise<void>((resolve, reject) => {
     const timeout = window.setTimeout(() => {
@@ -588,6 +621,7 @@ export function publishMqtt(
 
     const onError = (err: Error) => {
       cleanup();
+      console.error('[MQTT] publish failed', topic, payload, err.message);
       reject(err);
     };
 
@@ -599,10 +633,12 @@ export function publishMqtt(
         (err: Error | null | undefined) => {
           cleanup();
           if (err) {
+            console.error('[MQTT] publish callback error', topic, payload, err.message);
             reject(err);
             return;
           }
 
+          console.debug('[MQTT] publish success', topic, payload);
           snapshot = {
             ...snapshot,
             lastTopic: topic,

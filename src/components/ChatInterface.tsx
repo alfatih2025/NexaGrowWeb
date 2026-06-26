@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
+import type { ReactNode } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Send, Bot, Sparkles, Sprout, RefreshCw, Wifi, WifiOff, AlertTriangle, Leaf } from 'lucide-react';
 import { useChat } from '../hooks/useChat';
@@ -19,6 +20,126 @@ interface ChatInterfaceProps {
   settings?: Settings | null;
   weatherData?: WeatherData | null;
   variant?: 'full' | 'compact';
+}
+
+function renderInlineText(text: string) {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g).filter(Boolean);
+
+  return parts.map((part, index) => {
+    if (part.startsWith('**') && part.endsWith('**') && part.length > 4) {
+      return (
+        <strong key={`${index}-${part}`} className="font-semibold text-slate-900">
+          {part.slice(2, -2)}
+        </strong>
+      );
+    }
+
+    return <span key={`${index}-${part}`}>{part}</span>;
+  });
+}
+
+function renderAssistantMessage(content: string) {
+  const lines = content.split(/\r?\n/);
+  const blocks: ReactNode[] = [];
+  let currentList: ReactNode[] = [];
+  let listType: 'ul' | 'ol' | null = null;
+
+  const flushList = () => {
+    if (!currentList.length || !listType) return;
+    blocks.push(
+      <div key={`list-${blocks.length}`} className="space-y-1">
+        {currentList}
+      </div>,
+    );
+    currentList = [];
+    listType = null;
+  };
+
+  lines.forEach((line, lineIndex) => {
+    const trimmed = line.trim();
+
+    if (!trimmed) {
+      flushList();
+      blocks.push(<div key={`spacer-${lineIndex}`} className="h-1" />);
+      return;
+    }
+
+    if (trimmed.startsWith('## ')) {
+      flushList();
+      blocks.push(
+        <h4 key={`h2-${lineIndex}`} className="text-sm font-semibold uppercase tracking-wide text-emerald-700">
+          {trimmed.slice(3)}
+        </h4>,
+      );
+      return;
+    }
+
+    if (trimmed.startsWith('### ')) {
+      flushList();
+      blocks.push(
+        <h5 key={`h3-${lineIndex}`} className="text-sm font-semibold text-slate-800">
+          {trimmed.slice(4)}
+        </h5>,
+      );
+      return;
+    }
+
+    if (/^[-*]\s+/.test(trimmed)) {
+      if (listType !== 'ul') {
+        flushList();
+        listType = 'ul';
+      }
+      currentList.push(
+        <div key={`ul-${lineIndex}`} className="flex gap-2 text-sm leading-6 text-slate-700">
+          <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
+          <span>{renderInlineText(trimmed.replace(/^[-*]\s+/, ''))}</span>
+        </div>,
+      );
+      return;
+    }
+
+    if (/^\d+[.)]\s+/.test(trimmed)) {
+      if (listType !== 'ol') {
+        flushList();
+        listType = 'ol';
+      }
+      const number = trimmed.match(/^(\d+[.)])\s+/)?.[1] ?? '';
+      const text = trimmed.replace(/^\d+[.)]\s+/, '');
+      currentList.push(
+        <div key={`ol-${lineIndex}`} className="flex gap-2 text-sm leading-6 text-slate-700">
+          <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-slate-100 px-1 text-[11px] font-semibold text-slate-600">
+            {number.replace(/[.)]/g, '')}
+          </span>
+          <span>{renderInlineText(text)}</span>
+        </div>,
+      );
+      return;
+    }
+
+    flushList();
+
+    const isKeyValue = trimmed.includes(':') && trimmed.length < 120;
+    if (isKeyValue) {
+      const [label, ...rest] = trimmed.split(':');
+      const value = rest.join(':').trim();
+      blocks.push(
+        <div key={`kv-${lineIndex}`} className="rounded-xl border border-slate-200 bg-white/70 px-3 py-2">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label.trim()}</div>
+          <div className="mt-1 text-sm text-slate-800">{renderInlineText(value || '-')}</div>
+        </div>,
+      );
+      return;
+    }
+
+    blocks.push(
+      <p key={`p-${lineIndex}`} className="text-sm leading-6 text-slate-700">
+        {renderInlineText(trimmed)}
+      </p>,
+    );
+  });
+
+  flushList();
+  return <div className="space-y-2">{blocks}</div>;
 }
 
 export function ChatInterface({ sensorData = null, settings = null, weatherData = null, variant = 'full' }: ChatInterfaceProps) {
@@ -53,6 +174,11 @@ export function ChatInterface({ sensorData = null, settings = null, weatherData 
       watering_time: settings?.watering_time ?? sensorData?.watering_time ?? null,
       watering_duration: settings?.watering_duration ?? sensorData?.watering_duration ?? null,
       schedule_enabled: settings?.watering_enabled ?? sensorData?.schedule_enabled ?? undefined,
+      formula_name: sensorData?.formula_name ?? null,
+      formula_soil: sensorData?.formula_soil ?? null,
+      formula_vpd: sensorData?.formula_vpd ?? null,
+      formula_score: sensorData?.formula_score ?? null,
+      soil_raw_dry: sensorData?.soil_raw_dry ?? null,
       created_at: sensorData?.created_at ?? null,
       plant_phase: settings?.plant_phase ?? null,
       soil_threshold_low: settings?.soil_threshold_low ?? null,
@@ -238,7 +364,11 @@ export function ChatInterface({ sensorData = null, settings = null, weatherData 
                   message.role === 'user' ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-800'
                 }`}
               >
-                {message.content}
+                {message.role === 'user' ? (
+                  <p className="whitespace-pre-wrap leading-6">{message.content}</p>
+                ) : (
+                  renderAssistantMessage(message.content)
+                )}
               </div>
             </motion.div>
           ))}

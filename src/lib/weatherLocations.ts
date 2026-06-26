@@ -37,7 +37,7 @@ export const WEATHER_LOCATION_GROUPS: WeatherLocationGroup[] = [
 
 export const DEFAULT_WEATHER_LOCATION_CODE = '33.74.07.1010';
 
-const ADM4_PATTERN = /^\d{2}(?:\.\d{2}){1,3}$/;
+const ADM4_PATTERN = /^\d{2}(?:\.\d{2}){1,2}(?:\.\d{1,4})?$/;
 const SEMARANG_VILLAGE_PATTERN = /^33\.74\.\d{2}\.\d{4}$/;
 
 function normalizeText(value: unknown) {

@@ -46,7 +46,6 @@ export function Header({ mqttStatus, currentPage }: HeaderProps) {
       <div className="flex items-center justify-between gap-3 px-4 py-4 sm:px-6">
         <div className="min-w-0 pl-12 pr-1 sm:pl-0">
           <h2 className="truncate text-lg font-bold text-slate-900 sm:text-2xl">{title}</h2>
-          <p className="mt-0.5 hidden text-xs text-slate-500 sm:block">Mode tampilan cerah aktif secara permanen</p>
         </div>
 
         <div className="flex items-center gap-2 sm:gap-3">

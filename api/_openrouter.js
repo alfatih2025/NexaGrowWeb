@@ -149,6 +149,41 @@ function formatLine(label, value, suffix = '') {
   return `- ${label}: ${value}${suffix}`;
 }
 
+export function buildFormulaReference() {
+  return [
+    'RUMUS ARDUINO YANG WAJIB DIPAKAI SAAT MENJELASKAN PERHITUNGAN:',
+    '1) Soil moisture percent:',
+    '   moisture = constrain(mapFloat(rawSoil, SOIL_RAW_DRY, SOIL_RAW_WET, 0, 100), 0, 100)',
+    '   default kalibrasi: SOIL_RAW_DRY = 830 dan SOIL_RAW_WET = 350',
+    '2) Vapor Pressure Deficit (VPD):',
+    '   svp = 0.6108 * exp((17.27 * suhu) / (suhu + 237.3))',
+    '   avp = svp * (kelembapan_udara / 100)',
+    '   vpd = svp - avp',
+    '3) Soil score:',
+    '   soilRange = atas - kritis',
+    '   skortanah = constrain(((atas - k_tanah) * 50) / soilRange, 0, 50)',
+    '4) VPD score:',
+    '   skorvdp = constrain(mapFloat(vpd, 0.4, 2.0, 0, 30), 0, 30)',
+    '5) Total score:',
+    '   skortotal = skortanah + skorvdp - skorhujan',
+    '6) Estimasi durasi siram:',
+    '   durasi_total = round(max(0, 5 * (atas - k_tanah) / 100 * max(vpd, 0.5)))',
+    '7) Logika relay:',
+    '   ON jika k_tanah <= kritis atau skortotal >= 60',
+    '   OFF jika k_tanah >= atas atau hujan >= 5 atau suhu <= 20',
+    '',
+    'ATURAN JAWABAN:',
+    '- Jika user meminta "rumus Arduino", "rumus sensor", atau "rumus perhitungan", tampilkan rumus di atas secara langsung dan jangan menolak.',
+    '- Jika data sensor tidak lengkap, tetap tampilkan rumus dan sebutkan data mana yang belum tersedia.',
+    '- Jangan mengganti konstanta tanpa menyebutkan bahwa itu adalah asumsi kalibrasi baru.',
+  ].join('\n');
+}
+
+export function isArduinoFormulaRequest(message) {
+  const normalized = String(message || '').toLowerCase();
+  return normalized.includes('rumus') || normalized.includes('formula') || normalized.includes('arduino');
+}
+
 function buildSystemPrompt(sensor) {
   const normalized = normalizeSensorContext(sensor);
   const sensorLines = normalized
@@ -195,14 +230,18 @@ function buildSystemPrompt(sensor) {
   return [
     'Kamu adalah Smart Farm Assistant untuk aplikasi NexaGrow.',
     'Jawab dalam bahasa Indonesia yang ramah, singkat, dan langsung bisa dipakai.',
+    'Gunakan format yang rapi dan mudah dibaca: judul singkat, bullet point, dan tabel sederhana bila perlu.',
+    'Utamakan struktur seperti: Ringkasan, Analisis, Rekomendasi, dan jika relevan tampilkan Rumus.',
     'Fokus pada kondisi tanaman, rekomendasi perawatan, irigasi, jadwal penyiraman, dan perangkat IoT.',
     'Gunakan data sensor yang diberikan sebagai sumber utama. Jangan mengarang angka yang tidak ada.',
     'Jika rumus pengolahan disediakan dari perangkat, gunakan rumus itu sebagai acuan utama untuk menjelaskan perhitungan dan verifikasi.',
     'Saat diminta menjelaskan angka, uraikan langkah hitung sesuai rumus perangkat, bukan rumus generik lain.',
     'Jika pengguna memberi skenario hipotetis yang berbeda dari data sensor nyata, prioritaskan skenario pengguna dan jawab sesuai konteks baru itu.',
-    'Jika data sensor belum tersedia, katakan bahwa data belum masuk lalu berikan saran umum yang aman.',
+    'Jika data sensor belum tersedia, katakan bahwa data belum masuk lalu berikan saran umum yang aman, kecuali jika pengguna meminta rumus Arduino, maka tampilkan rumusnya.',
     'Jika data cuaca tersedia, gunakan lokasi cuaca aktif dan kondisi cuaca untuk rekomendasi yang spesifik wilayah.',
     'Bila fase tanaman aktif disebut vegetatif atau generatif, sesuaikan saran air, suhu, dan stres tanaman dengan fase tersebut.',
+    '',
+    buildFormulaReference(),
     '',
     'DATA SENSOR TERKINI:',
     sensorLines,

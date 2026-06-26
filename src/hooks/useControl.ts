@@ -68,6 +68,10 @@ function resolveControlCommand(action: string, duration?: number, data?: Record<
         payload: JSON.stringify({
           plant_phase: String(data?.plant_phase ?? '').trim(),
           location: String(data?.location ?? '').trim(),
+          weather_location: String(data?.weather_location ?? data?.location ?? '').trim(),
+          weather_condition: String(data?.weather_condition ?? '').trim(),
+          weather_rain_chance: Number(data?.weather_rain_chance ?? data?.rain_chance ?? 0),
+          weather_temperature: Number(data?.weather_temperature ?? data?.temperature ?? 0),
           temp_threshold_low: Number(data?.temp_threshold_low ?? 0),
           temp_threshold_high: Number(data?.temp_threshold_high ?? 0),
           humidity_threshold_low: Number(data?.humidity_threshold_low ?? 0),
@@ -135,6 +139,7 @@ export function useControl() {
 
       const mqttCommand = resolveControlCommand(action, duration, data);
       if (!mqttCommand) throw new Error(`Perintah "${action}" tidak dikenal`);
+      console.debug('[CONTROL] sendCommand', { action, duration, data, mqttCommand, connected: client.connected });
 
       if (!client.connected) {
         await new Promise<void>((resolve, reject) => {

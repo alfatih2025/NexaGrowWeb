@@ -24,6 +24,11 @@ export interface SensorData {
   watering_time?: string | null;
   watering_duration?: number | null;
   schedule_enabled?: boolean;
+  formula_name?: string | null;
+  formula_soil?: string | null;
+  formula_vpd?: string | null;
+  formula_score?: string | null;
+  soil_raw_dry?: number | null;
   created_at: string;
 }
 
@@ -66,6 +71,11 @@ function buildFallbackData(): SensorData {
     watering_time: null,
     watering_duration: null,
     schedule_enabled: true,
+    formula_name: null,
+    formula_soil: null,
+    formula_vpd: null,
+    formula_score: null,
+    soil_raw_dry: null,
     created_at: new Date().toISOString(),
   };
 }
@@ -97,6 +107,11 @@ function normalizeSensorDataRow(row: any): SensorData | null {
     watering_time: typeof row.watering_time === 'string' ? row.watering_time : null,
     watering_duration: toNumber(row.watering_duration, fallback.watering_duration),
     schedule_enabled: toBoolean(row.schedule_enabled, fallback.schedule_enabled),
+    formula_name: typeof row.formula_name === 'string' ? row.formula_name : null,
+    formula_soil: typeof row.formula_soil === 'string' ? row.formula_soil : null,
+    formula_vpd: typeof row.formula_vpd === 'string' ? row.formula_vpd : null,
+    formula_score: typeof row.formula_score === 'string' ? row.formula_score : null,
+    soil_raw_dry: toNumber(row.soil_raw_dry, fallback.soil_raw_dry),
     created_at: row.created_at ?? new Date().toISOString(),
   };
 }
@@ -128,6 +143,11 @@ function mergeSensorData(base: SensorData | null, live: MqttSensorSnapshot | nul
     watering_time: live?.watering_time ?? fallback.watering_time,
     watering_duration: live?.watering_duration ?? fallback.watering_duration,
     schedule_enabled: live?.schedule_enabled ?? fallback.schedule_enabled,
+    formula_name: live?.formula_name ?? fallback.formula_name,
+    formula_soil: live?.formula_soil ?? fallback.formula_soil,
+    formula_vpd: live?.formula_vpd ?? fallback.formula_vpd,
+    formula_score: live?.formula_score ?? fallback.formula_score,
+    soil_raw_dry: live?.soil_raw_dry ?? fallback.soil_raw_dry,
     created_at: live?.updatedAt ?? fallback.created_at,
   };
 }
