@@ -102,6 +102,16 @@ export interface MqttStatusSnapshot {
 
 type SensorDelta = Partial<Omit<MqttSensorSnapshot, 'updatedAt' | 'sourceTopic'>>;
 
+interface MqttAckWaiter {
+  topic: string;
+  matcher: (topic: string, payload: string) => boolean;
+  resolve: () => void;
+  reject: (error: Error) => void;
+  timeoutId: number;
+}
+
+const pendingMqttAcks = new Set<MqttAckWaiter>();
+
 let client: MqttClient | null = null;
 const listeners = new Set<() => void>();
 
@@ -253,13 +263,27 @@ function dispatchSettingsEvent(detail: Record<string, unknown>) {
   }
 }
 
-function parseMqttJsonPayload(payload: string): Record<string, unknown> | null {
+export function parseMqttJsonPayload(payload: string): Record<string, unknown> | null {
   try {
     const parsed = JSON.parse(payload);
     if (!parsed || typeof parsed !== 'object') return null;
     return parsed as Record<string, unknown>;
   } catch {
     return null;
+  }
+}
+
+function consumePendingMqttAcks(topic: string, payload: string) {
+  for (const waiter of Array.from(pendingMqttAcks)) {
+    try {
+      if (waiter.matcher(topic, payload)) {
+        pendingMqttAcks.delete(waiter);
+        window.clearTimeout(waiter.timeoutId);
+        waiter.resolve();
+      }
+    } catch {
+      // ignore matcher failures
+    }
   }
 }
 
@@ -276,7 +300,17 @@ function applySettingsSnapshot(detail: Record<string, unknown>, sourceTopic: str
   };
 
   setSensorSnapshot(nextSensorDelta, sourceTopic, true);
-  dispatchSettingsEvent(detail);
+
+  const settingsDetail = {
+    ...(detail as Record<string, unknown>),
+    watering_time: typeof detail.watering_time === 'string' ? detail.watering_time : undefined,
+    watering_duration: parseNumeric(detail.watering_duration),
+    watering_enabled: detail.watering_enabled === undefined
+      ? (detail.schedule_enabled === undefined ? undefined : parseBoolean(detail.schedule_enabled))
+      : Boolean(detail.watering_enabled),
+  } as Record<string, unknown>;
+
+  dispatchSettingsEvent(settingsDetail);
 }
 
 function parseNumeric(value: unknown): number | null {
@@ -325,16 +359,16 @@ function normalizeJsonSensorPayload(payload: string): SensorDelta | null {
       vpd: parseNumeric(obj.vpd ?? obj.vdp_value ?? obj.vapor_pressure_deficit),
 
       duration_estimate: parseNumeric(obj.duration_estimate ?? obj.duration ?? obj.durasi),
-      pump_status: parseBoolean(obj.pump_status),
-      led_status: parseBoolean(obj.led_status ?? obj.feeder_status),
-      device_mode: parseMode(obj.device_mode),
+      pump_status: parseBoolean(obj.pump_status ?? obj.relay_state),
+      led_status: parseBoolean(obj.led_status ?? obj.led_state ?? obj.feeder_status),
+      device_mode: parseMode(obj.device_mode ?? (obj.auto_mode === true ? 'auto' : obj.auto_mode === false ? 'manual' : undefined)),
       wifi_status: typeof obj.wifi_status === 'string' ? obj.wifi_status : undefined,
       threshold_kritis: parseNumeric(obj.threshold_kritis),
       threshold_atas: parseNumeric(obj.threshold_atas),
       threshold_bawah: parseNumeric(obj.threshold_bawah),
       watering_time: typeof obj.watering_time === 'string' ? obj.watering_time : undefined,
       watering_duration: parseNumeric(obj.watering_duration),
-      schedule_enabled: parseBoolean(obj.schedule_enabled),
+      schedule_enabled: parseBoolean(obj.schedule_enabled ?? obj.watering_enabled),
       formula_name: typeof obj.formula_name === 'string' ? obj.formula_name : undefined,
       formula_soil: typeof obj.formula_soil === 'string' ? obj.formula_soil : undefined,
       formula_vpd: typeof obj.formula_vpd === 'string' ? obj.formula_vpd : undefined,
@@ -433,12 +467,19 @@ function updateFromTopic(topic: string, payload: string) {
   } else if (topic === TOPIC_SCHEDULE_STATUS) {
     const parsed = parseMqttJsonPayload(trimmed);
     if (parsed) {
-      setSensorSnapshot({
+      const normalizedSchedule = {
         watering_time: typeof parsed.watering_time === 'string' ? parsed.watering_time : undefined,
         watering_duration: parseNumeric(parsed.watering_duration),
-        schedule_enabled: parseBoolean(parsed.schedule_enabled),
+        watering_enabled: parseBoolean(parsed.schedule_enabled ?? parsed.watering_enabled),
+        schedule_enabled: parseBoolean(parsed.schedule_enabled ?? parsed.watering_enabled),
+      };
+
+      setSensorSnapshot({
+        watering_time: normalizedSchedule.watering_time,
+        watering_duration: normalizedSchedule.watering_duration,
+        schedule_enabled: normalizedSchedule.schedule_enabled,
       }, topic);
-      dispatchSettingsEvent(parsed);
+      dispatchSettingsEvent(normalizedSchedule);
     }
   }
 
@@ -536,7 +577,9 @@ function connectOnce() {
   });
 
   client.on('message', (topic: string, message: Buffer) => {
-    updateFromTopic(topic, message.toString());
+    const payload = message.toString();
+    updateFromTopic(topic, payload);
+    consumePendingMqttAcks(topic, payload);
   });
 
   if (typeof window !== 'undefined') {
@@ -661,6 +704,56 @@ export function publishMqtt(
   });
 }
 
+export function publishMqttWithAck(
+  topic: string,
+  payload: string,
+  ackTopic: string,
+  matcher: (topic: string, payload: string) => boolean,
+  timeoutMs = 12000,
+  options: Record<string, unknown> = {},
+) {
+  const currentClient = connectOnce();
+  if (!currentClient) {
+    return Promise.reject(new Error('MQTT client belum tersedia'));
+  }
+
+  console.debug('[MQTT] publishWithAck', { topic, payload, ackTopic, options });
+
+  return new Promise<void>((resolve, reject) => {
+    let timeoutId = 0;
+    const cleanup = () => {
+      if (timeoutId) window.clearTimeout(timeoutId);
+      pendingMqttAcks.delete(waiter);
+    };
+
+    timeoutId = window.setTimeout(() => {
+      cleanup();
+      reject(new Error(`Timeout waiting for MQTT ACK on ${ackTopic}`));
+    }, timeoutMs);
+
+    const waiter: MqttAckWaiter = {
+      topic: ackTopic,
+      matcher,
+      resolve: () => {
+        cleanup();
+        resolve();
+      },
+      reject: (error: Error) => {
+        cleanup();
+        reject(error);
+      },
+      timeoutId,
+    };
+
+    pendingMqttAcks.add(waiter);
+
+    publishMqtt(topic, payload, options).catch((err) => {
+      cleanup();
+      reject(err);
+    });
+  });
+}
+
 function applyLocalSnapshot(action: string, duration?: number, data?: Record<string, any>) {
   const now = new Date().toISOString();
 
@@ -721,7 +814,9 @@ function applyLocalSnapshot(action: string, duration?: number, data?: Record<str
       setSensorSnapshot({
         watering_time: typeof data?.watering_time === 'string' ? data.watering_time : undefined,
         watering_duration: parseNumeric(data?.watering_duration),
-        schedule_enabled: data?.schedule_enabled === undefined ? undefined : Boolean(data.schedule_enabled),
+        schedule_enabled: data?.schedule_enabled === undefined
+          ? (data?.watering_enabled === undefined ? undefined : Boolean(data.watering_enabled))
+          : Boolean(data.schedule_enabled),
       }, TOPIC_SCHEDULE_STATUS, true);
       break;
     default:

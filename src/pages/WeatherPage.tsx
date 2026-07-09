@@ -270,8 +270,12 @@ export function WeatherPage({ locationCode, settings, updateSettings }: WeatherP
       setSelection((prev) => ({ ...prev, locationCode: normalized.location }));
 
       await sendCommand('settings_sync', undefined, {
-        location: normalized.location,
         plant_phase: normalized.plant_phase,
+        location: normalized.location,
+        weather_location: normalized.location,
+        weather_condition: data?.current.weather,
+        weather_rain_chance: data?.current.rain_chance,
+        weather_temperature: data?.current.temperature,
         temp_threshold_low: normalized.temp_threshold_low,
         temp_threshold_high: normalized.temp_threshold_high,
         humidity_threshold_low: normalized.humidity_threshold_low,
@@ -282,12 +286,16 @@ export function WeatherPage({ locationCode, settings, updateSettings }: WeatherP
         watering_time: normalized.watering_time,
         watering_duration: normalized.watering_duration,
         watering_enabled: normalized.watering_enabled,
+        auto_report: normalized.auto_report,
+        report_time: normalized.report_time,
       }).catch(() => undefined);
+
 
       await sendCommand('schedule_set', undefined, {
         watering_time: normalized.watering_time,
         watering_duration: normalized.watering_duration,
         schedule_enabled: normalized.watering_enabled,
+        watering_enabled: normalized.watering_enabled,
       }).catch(() => undefined);
 
       recordActivity({
@@ -305,8 +313,12 @@ export function WeatherPage({ locationCode, settings, updateSettings }: WeatherP
   };
 
   const currentCategoryLabel = WEATHER_LOCATION_CATEGORIES.find((item) => item.id === selection.category)?.label || 'Lokasi';
-  const villageOptions = selection.category === 'semarang' ? (bmkgVillages.length > 0 ? bmkgVillages : localVillageOptions) : localVillageOptions;
   const isSemarang = selection.category === 'semarang';
+  const villageOptions = isSemarang ? (bmkgVillages.length > 0 ? bmkgVillages : localVillageOptions) : localVillageOptions;
+
+  const hasVillageOptions = villageOptions.length > 0;
+  const districtFallbackOptions = districtOptions;
+
 
   return (
     <div className="space-y-6">
@@ -314,20 +326,19 @@ export function WeatherPage({ locationCode, settings, updateSettings }: WeatherP
         <CloudSun className="h-6 w-6 text-emerald-600" />
         <div>
           <h2 className="text-2xl font-bold text-gray-800">Prakiraan Cuaca</h2>
-          <p className="text-sm text-slate-500">
-            Pilih wilayah Jawa Tengah atau Semarang, simpan, lalu lokasi itu akan dipakai Dashboard, AI, dan tampilan cuaca.
-          </p>
         </div>
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.05fr_0.95fr]">
-        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="space-y-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm sm:p-6">
-          <div className="flex items-center gap-3">
-            <MapPin className="h-5 w-5 text-emerald-600" />
-            <div>
-              <h3 className="text-lg font-semibold text-gray-800">Set lokasi prakiraan</h3>
-              <p className="text-sm text-gray-500">Kategori aktif: {currentCategoryLabel}</p>
-            </div>
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="space-y-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm sm:p-6"
+        >
+          <MapPin className="h-5 w-5 text-emerald-600" />
+          <div>
+            <h3 className="text-lg font-semibold text-gray-800">Set lokasi prakiraan</h3>
+            <p className="text-sm text-gray-500">Kategori aktif: {currentCategoryLabel}</p>
           </div>
 
           <div className="flex flex-wrap gap-2">
@@ -350,7 +361,9 @@ export function WeatherPage({ locationCode, settings, updateSettings }: WeatherP
           <div className="grid gap-4 md:grid-cols-2">
             <div>
               <label className="mb-2 block text-sm font-medium text-gray-700">Provinsi</label>
+
               <div className="relative">
+
                 <select
                   value={selection.province}
                   onChange={(e) => handleProvinceChange(e.target.value)}
@@ -411,14 +424,18 @@ export function WeatherPage({ locationCode, settings, updateSettings }: WeatherP
                   disabled={isSemarang && loadingVillages && villageOptions.length === 0}
                   className="w-full appearance-none rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 pr-10 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 disabled:cursor-wait disabled:opacity-60"
                 >
-                  {villageOptions.length > 0 ? (
+                  {hasVillageOptions ? (
                     villageOptions.map((item) => (
                       <option key={item.code} value={item.code}>
                         {item.label}
                       </option>
                     ))
                   ) : (
-                    <option value={weatherCode}>{selection.district || selection.city}</option>
+                    districtFallbackOptions.map((item) => (
+                      <option key={item} value={pickFirstLocationCode(selection.category, selection.province, selection.city, item)}>
+                        {item}
+                      </option>
+                    ))
                   )}
                 </select>
                 <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -426,17 +443,7 @@ export function WeatherPage({ locationCode, settings, updateSettings }: WeatherP
             </div>
           </div>
 
-          {isSemarang && (
-            <div className="rounded-xl border border-sky-100 bg-sky-50 p-4 text-sm text-sky-900">
-              <p className="font-semibold">Data BMKG Semarang</p>
-              <p className="mt-1 text-sky-800">
-                Kecamatan dan kelurahan dimuat dari BMKG per kecamatan, lalu pilihan yang tersedia disinkronkan ke Dashboard dan AI.
-              </p>
-              <p className="mt-2 text-xs text-sky-700">
-                {loadingVillages ? 'Memuat daftar kelurahan dari BMKG...' : villagesError || 'Daftar kelurahan aktif sesuai data BMKG.'}
-              </p>
-            </div>
-          )}
+
 
           <div className="flex flex-col gap-3 rounded-xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-900 sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -454,9 +461,6 @@ export function WeatherPage({ locationCode, settings, updateSettings }: WeatherP
             </button>
           </div>
 
-          <p className="text-sm text-gray-500">
-            {saveState === 'saved' ? 'Lokasi cuaca berhasil disimpan.' : 'Simpan lokasi ini agar Dashboard, prakiraan, dan AI memakai wilayah yang sama.'}
-          </p>
         </motion.div>
 
         <div className="space-y-6">

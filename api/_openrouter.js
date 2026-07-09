@@ -153,24 +153,29 @@ export function buildFormulaReference() {
   return [
     'RUMUS ARDUINO YANG WAJIB DIPAKAI SAAT MENJELASKAN PERHITUNGAN:',
     '1) Soil moisture percent:',
-    '   moisture = constrain(mapFloat(rawSoil, SOIL_RAW_DRY, SOIL_RAW_WET, 0, 100), 0, 100)',
-    '   default kalibrasi: SOIL_RAW_DRY = 830 dan SOIL_RAW_WET = 350',
+    '   tanah = constrain(map(Nsoil, 400, 200, 0, 100), 0, 100)',
     '2) Vapor Pressure Deficit (VPD):',
     '   svp = 0.6108 * exp((17.27 * suhu) / (suhu + 237.3))',
-    '   avp = svp * (kelembapan_udara / 100)',
-    '   vpd = svp - avp',
+    '   vdp = svp * (1.0 - (kelembapan / 100.0))',
+    '   vdp = constrain(vdp, 0.4, 2.0)',
     '3) Soil score:',
-    '   soilRange = atas - kritis',
-    '   skortanah = constrain(((atas - k_tanah) * 50) / soilRange, 0, 50)',
+    '   skorTanah = constrain(((Atas - tanah) * 50.0) / (Atas - Kritis), 0, 50)',
     '4) VPD score:',
-    '   skorvdp = constrain(mapFloat(vpd, 0.4, 2.0, 0, 30), 0, 30)',
-    '5) Total score:',
-    '   skortotal = skortanah + skorvdp - skorhujan',
-    '6) Estimasi durasi siram:',
-    '   durasi_total = round(max(0, 5 * (atas - k_tanah) / 100 * max(vpd, 0.5)))',
-    '7) Logika relay:',
-    '   ON jika k_tanah <= kritis atau skortotal >= 60',
-    '   OFF jika k_tanah >= atas atau hujan >= 5 atau suhu <= 20',
+    '   skorvdp = ((vdp - 0.4) * 30.0) / (2.0 - 0.4)',
+    '5) Rain score (dari prediksi peluang hujan BMKG):',
+    '   skorHujan = constrain((peluangHujan / 100.0) * 40.0, 0, 40)',
+    '   peluangHujan = persentase peluang hujan BMKG (0-100%)',
+    '   hujan = (int)(peluangHujan / 20.0) → hanya untuk emergency cut-off (Gerbang 2: hujan >= 5 = pompa mati paksa)',
+    '6) Interaction score:',
+    '   skorInteraksi = constrain((skorTanah * skorvdp) / 50.0, 0, 30)',
+    '7) Total score:',
+    '   skorTotal = skorTanah + skorvdp + skorInteraksi - skorHujan',
+    '8) Jeda durasi mati pompa (durasiOff):',
+    '   durasiOff = 30000 * (1.0 + ((Atas - tanah) / 100.0))',
+    '9) Logika relay pompa otomatis:',
+    '   - Batal siram (Cut-off): Pompa MATI jika hujan >= 5 atau tanah >= Atas.',
+    '   - Fase Vegetatif: Pompa ON jika skorTotal > 55 dan jeda durasiOff terpenuhi. Pompa MATI jika menyala melebihi durasiOn (atau di luar jadwal).',
+    '   - Fase Generatif: Pompa ON jika skorTotal > 60 dan jeda durasiOff terpenuhi. Pompa MATI jika menyala melebihi durasiOn (atau di luar jadwal).',
     '',
     'ATURAN JAWABAN:',
     '- Jika user meminta "rumus Arduino", "rumus sensor", atau "rumus perhitungan", tampilkan rumus di atas secara langsung dan jangan menolak.',
@@ -259,8 +264,9 @@ export async function getOpenRouterStatus(origin) {
     return {
       ok: false,
       state: 'missing_key',
-      label: 'API key belum diatur',
+      label: 'AI Online: API key belum diatur',
       detail: 'Tambahkan OPENROUTER_API_KEY di environment server.',
+
       checkedAt,
     };
   }
@@ -276,8 +282,9 @@ export async function getOpenRouterStatus(origin) {
       return {
         ok: false,
         state: 'error',
-        label: 'OpenRouter tidak tersambung',
+        label: 'AI Online tidak tersambung',
         detail: detail || `HTTP ${response.status}`,
+
         checkedAt,
       };
     }
@@ -285,7 +292,8 @@ export async function getOpenRouterStatus(origin) {
     return {
       ok: true,
       state: 'connected',
-      label: 'OpenRouter terhubung',
+      label: 'AI Online',
+
       detail: `Model aktif: ${getOpenRouterModel()}`,
       checkedAt,
     };
@@ -293,8 +301,9 @@ export async function getOpenRouterStatus(origin) {
     return {
       ok: false,
       state: 'error',
-      label: 'OpenRouter tidak tersambung',
+      label: 'AI Online tidak tersambung',
       detail: error instanceof Error ? error.message : 'Unknown connection error',
+
       checkedAt,
     };
   }

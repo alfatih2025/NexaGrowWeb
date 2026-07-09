@@ -17,6 +17,7 @@ export function SettingsPage() {
   const { sendCommand, loading: controlLoading } = useControl();
 
   const [formData, setFormData] = useState<Partial<SettingsType>>({});
+  const [isDirty, setIsDirty] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [wifiSsid, setWifiSsid] = useState('');
   const [wifiPassword, setWifiPassword] = useState('');
@@ -24,20 +25,25 @@ export function SettingsPage() {
   const [wifiError, setWifiError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (settings) setFormData(settings);
-  }, [settings]);
+    if (settings && !isDirty) setFormData(settings);
+  }, [settings, isDirty]);
 
-  const weatherLocation = String(formData.location || settings?.location || '33.74.07.1010');
+  const weatherLocation = String(formData.location || settings?.location || '');
+
+  // Kode wilayah disimpan internal untuk API cuaca, namun tidak ditampilkan mentah di UI web.
   const { data: weatherData } = useWeather(weatherLocation);
+
 
   const currentPhase = (formData.plant_phase || settings?.plant_phase || 'vegetatif') as 'vegetatif' | 'generatif';
   const phaseProfile = getPlantPhaseProfile(currentPhase);
 
   const updateField = (field: keyof SettingsType, value: unknown) => {
+    setIsDirty(true);
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
   const applyPhaseDefaults = (phase: 'vegetatif' | 'generatif') => {
+    setIsDirty(true);
     const defaults = getPhaseDefaults(phase);
     setFormData((prev) => ({
       ...prev,
@@ -61,7 +67,8 @@ export function SettingsPage() {
         ...formData,
         plant_phase: currentPhase,
         crop_mode: currentPhase,
-        location: String(formData.location ?? settings?.location ?? '').trim() || settings?.location || '33.74.07.1010',
+        location: String(formData.location ?? settings?.location ?? '').trim() || settings?.location || '',
+
         watering_time: formData.watering_time || settings?.watering_time || '06:00',
         watering_duration: Number(formData.watering_duration ?? settings?.watering_duration ?? 10),
         watering_enabled: Boolean(formData.watering_enabled ?? settings?.watering_enabled ?? true),
@@ -76,30 +83,38 @@ export function SettingsPage() {
 
       const normalized = await updateSettings(payload);
 
-      await sendCommand('settings_sync', undefined, {
-        location: normalized.location,
-        weather_location: normalized.location,
-        weather_condition: weatherData?.current.weather,
-        weather_rain_chance: weatherData?.current.rain_chance,
-        weather_temperature: weatherData?.current.temperature,
-        plant_phase: normalized.plant_phase,
-        temp_threshold_low: normalized.temp_threshold_low,
-        temp_threshold_high: normalized.temp_threshold_high,
-        humidity_threshold_low: normalized.humidity_threshold_low,
-        humidity_threshold_high: normalized.humidity_threshold_high,
-        soil_threshold_low: normalized.soil_threshold_low,
-        soil_threshold_high: normalized.soil_threshold_high,
-        soil_threshold_critical: normalized.soil_threshold_critical,
-        watering_time: normalized.watering_time,
-        watering_duration: normalized.watering_duration,
-        watering_enabled: normalized.watering_enabled,
-      }).catch(() => undefined);
+      await Promise.race([
+        Promise.all([
+          sendCommand('settings_sync', undefined, {
+            plant_phase: normalized.plant_phase,
+            location: normalized.location,
+            weather_location: normalized.location,
+            weather_condition: weatherData?.current.weather,
+            weather_rain_chance: weatherData?.current.rain_chance,
+            weather_temperature: weatherData?.current.temperature,
+            temp_threshold_low: normalized.temp_threshold_low,
+            temp_threshold_high: normalized.temp_threshold_high,
+            humidity_threshold_low: normalized.humidity_threshold_low,
+            humidity_threshold_high: normalized.humidity_threshold_high,
+            soil_threshold_low: normalized.soil_threshold_low,
+            soil_threshold_high: normalized.soil_threshold_high,
+            soil_threshold_critical: normalized.soil_threshold_critical,
+            watering_time: normalized.watering_time,
+            watering_duration: normalized.watering_duration,
+            watering_enabled: normalized.watering_enabled,
+            auto_report: normalized.auto_report,
+            report_time: normalized.report_time,
+          }).catch(() => undefined),
 
-      await sendCommand('schedule_set', undefined, {
-        watering_time: normalized.watering_time,
-        watering_duration: normalized.watering_duration,
-        schedule_enabled: normalized.watering_enabled,
-      }).catch(() => undefined);
+          sendCommand('schedule_set', undefined, {
+            watering_time: normalized.watering_time,
+            watering_duration: normalized.watering_duration,
+            schedule_enabled: normalized.watering_enabled,
+            watering_enabled: normalized.watering_enabled,
+          }).catch(() => undefined),
+        ]),
+        new Promise((resolve) => window.setTimeout(() => resolve(undefined), 1800)),
+      ]);
 
       recordActivity({
         source: 'settings',
@@ -116,9 +131,11 @@ export function SettingsPage() {
       });
 
       setFormData(normalized);
+      setIsDirty(false);
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus('idle'), 2000);
     } catch {
+      setIsDirty(false);
       setSaveStatus('idle');
     }
   };
@@ -159,27 +176,10 @@ export function SettingsPage() {
         <SettingsIcon className="h-6 w-6 text-emerald-600" />
         <div>
           <h2 className="text-2xl font-bold text-gray-800">Pengaturan</h2>
-          <p className="text-sm text-slate-500">Semua ambang batas utama disimpan di sini dan dipakai bersama Dashboard, AI, serta cuaca.</p>
         </div>
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
-          <div className="mb-6 flex items-center gap-3">
-            <User className="h-5 w-5 text-emerald-600" />
-            <h3 className="text-lg font-semibold text-gray-800">Profil Pengguna</h3>
-          </div>
-          <div className="space-y-4">
-            <div>
-              <label className="mb-2 block text-sm font-medium text-gray-700">Nama</label>
-              <input type="text" value={formData.user_name || ''} onChange={(e) => updateField('user_name', e.target.value)} className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20" />
-            </div>
-            <div>
-              <label className="mb-2 block text-sm font-medium text-gray-700">Email Gmail / Notifikasi</label>
-              <input type="email" value={formData.user_email || ''} onChange={(e) => updateField('user_email', e.target.value)} className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20" />
-            </div>
-          </div>
-        </motion.div>
 
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
           <div className="mb-6 flex items-center gap-3">
@@ -315,7 +315,7 @@ export function SettingsPage() {
 
       <div className="flex items-center justify-between">
         <div className="text-sm text-gray-500">
-          {saveStatus === 'saved' ? 'Pengaturan berhasil disimpan.' : 'Perubahan akan disimpan ke server dan dipakai AI.'}
+          {saveStatus === 'saved' ? 'Pengaturan berhasil disimpan.' : ''}
         </div>
         <button onClick={handleSave} className="rounded-xl bg-emerald-600 px-6 py-3 font-semibold text-white shadow-sm">
           {saveStatus === 'saving' ? 'Menyimpan...' : 'Simpan Pengaturan'}

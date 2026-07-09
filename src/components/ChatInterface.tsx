@@ -279,8 +279,9 @@ export function ChatInterface({ sensorData = null, settings = null, weatherData 
             {!isCompact && (
               <div className={`hidden items-center gap-1 rounded-full border px-3 py-1 text-[11px] font-medium sm:flex ${statusTone.chip}`}>
                 <StatusIcon size={12} className={connectionStatus.state === 'checking' ? 'animate-spin' : ''} />
-                OpenRouter
+                AI Online
               </div>
+
             )}
             <button
               type="button"
@@ -296,7 +297,8 @@ export function ChatInterface({ sensorData = null, settings = null, weatherData 
               onClick={refreshConnectionStatus}
               disabled={loading}
               className="rounded-lg border border-white/60 bg-white/80 p-2 text-gray-600 transition hover:bg-white disabled:opacity-50"
-              title="Periksa ulang koneksi OpenRouter"
+              title="Periksa ulang koneksi AI Online"
+
             >
               <RefreshCw size={16} className={connectionStatus.state === 'checking' ? 'animate-spin' : ''} />
             </button>

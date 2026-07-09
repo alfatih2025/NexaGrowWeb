@@ -24,7 +24,6 @@ export function ControlPage({ sensorData }: ControlPageProps) {
         <Zap className="h-6 w-6 text-emerald-600" />
         <div>
           <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Kontrol Perangkat</h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400">Panel ini difokuskan untuk pompa dan sinkronisasi jadwal penyiraman.</p>
         </div>
       </div>
 

@@ -97,11 +97,13 @@ function readStoredSettings(): Settings | null {
   }
 }
 
-function persistSettings(settings: Settings) {
+function persistSettings(settings: Settings, emitEvent = true) {
   if (typeof window === 'undefined') return;
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
-    window.dispatchEvent(new CustomEvent(SETTINGS_EVENT, { detail: settings }));
+    if (emitEvent) {
+      window.dispatchEvent(new CustomEvent(SETTINGS_EVENT, { detail: settings }));
+    }
   } catch {
     // ignore storage failures
   }
@@ -156,7 +158,7 @@ export function useSettings() {
   const syncLocalSettings = useCallback((next: Settings) => {
     const normalized = normalizeSettings(next);
     setSettings(normalized);
-    persistSettings(normalized);
+    persistSettings(normalized, true);
     return normalized;
   }, []);
 
@@ -172,7 +174,7 @@ export function useSettings() {
     } catch (err) {
       const fallback = readStoredSettings() ?? DEFAULT_SETTINGS;
       setSettings(fallback);
-      persistSettings(fallback);
+      persistSettings(fallback, true);
       setError(err instanceof Error ? err.message : 'Unknown error');
       return fallback;
     } finally {
@@ -225,7 +227,11 @@ export function useSettings() {
     const handleExternalSync = (event: Event) => {
       const detail = (event as CustomEvent<Partial<Settings>>).detail;
       if (!detail || typeof detail !== 'object') return;
-      setSettings((current) => normalizeSettings({ ...(current ?? DEFAULT_SETTINGS), ...detail }));
+      setSettings((current) => {
+        const normalized = normalizeSettings({ ...(current ?? DEFAULT_SETTINGS), ...detail });
+        persistSettings(normalized, false);
+        return normalized;
+      });
     };
 
     const handleStorage = (event: StorageEvent) => {

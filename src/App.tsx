@@ -101,9 +101,9 @@ function App() {
       threshold_kritis: live?.threshold_kritis ?? fallback?.threshold_kritis ?? null,
       threshold_atas: live?.threshold_atas ?? fallback?.threshold_atas ?? null,
       threshold_bawah: live?.threshold_bawah ?? fallback?.threshold_bawah ?? null,
-      watering_time: live?.watering_time ?? fallback?.watering_time ?? null,
-      watering_duration: live?.watering_duration ?? fallback?.watering_duration ?? null,
-      schedule_enabled: live?.schedule_enabled ?? fallback?.schedule_enabled ?? true,
+      watering_time: live?.watering_time ?? fallback?.watering_time ?? settings?.watering_time ?? null,
+      watering_duration: live?.watering_duration ?? fallback?.watering_duration ?? settings?.watering_duration ?? null,
+      schedule_enabled: live?.schedule_enabled ?? fallback?.schedule_enabled ?? settings?.watering_enabled ?? true,
       formula_name: live?.formula_name ?? fallback?.formula_name ?? null,
       formula_soil: live?.formula_soil ?? fallback?.formula_soil ?? null,
       formula_vpd: live?.formula_vpd ?? fallback?.formula_vpd ?? null,
@@ -111,7 +111,7 @@ function App() {
       soil_raw_dry: live?.soil_raw_dry ?? fallback?.soil_raw_dry ?? null,
       created_at: live?.updatedAt ?? fallback?.created_at ?? new Date().toISOString(),
     };
-  }, [sensorData, mqttStatus.sensorSnapshot]);
+  }, [sensorData, mqttStatus.sensorSnapshot, settings]);
 
   const health = useMemo(() => {
     if (!settings) return null;

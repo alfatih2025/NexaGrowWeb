@@ -112,7 +112,7 @@ export default async function handler(req, res) {
 
   try {
     if (req.method === 'GET') {
-      if (!supabase) return res.status(200).json(DEFAULT_SETTINGS);
+      if (!supabase) return res.status(503).json({ error: 'Database not configured' });
 
       const { data, error } = await supabase
         .from('settings')
@@ -120,8 +120,13 @@ export default async function handler(req, res) {
         .eq('id', 1)
         .maybeSingle();
 
-      if (error && error.code !== 'PGRST116') {
-        return res.status(200).json(DEFAULT_SETTINGS);
+      if (error) {
+        if (error.code === 'PGRST116') {
+          // No rows found, safe to return default
+          return res.status(200).json(DEFAULT_SETTINGS);
+        }
+        // Any other error (connection, etc) should fail so frontend uses localStorage
+        return res.status(500).json({ error: error.message });
       }
 
       return res.status(200).json(data || DEFAULT_SETTINGS);
@@ -132,6 +137,8 @@ export default async function handler(req, res) {
 
       const updates = req.body || {};
       const payload = normalizeSettings(updates);
+
+      if (!supabase) return res.status(503).json({ error: 'Database not configured' });
 
       const { data, error } = await supabase
         .from('settings')

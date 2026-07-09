@@ -26,9 +26,9 @@ export function ControlPanel({ sensorData }: ControlPanelProps) {
     return `Aktif • ${sensorData.watering_time} • ${duration}`;
   }, [sensorData?.schedule_enabled, sensorData?.watering_time, sensorData?.watering_duration]);
 
-  const handleCommand = async (action: string, duration?: number) => {
+  const handleCommand = async (action: string, duration?: number, data?: Record<string, any>) => {
     try {
-      await sendCommand(action, duration);
+      await sendCommand(action, duration, data);
       if (action === 'mode_auto') setActiveMode('auto');
       if (action === 'mode_manual') setActiveMode('manual');
     } catch (err) {
@@ -162,16 +162,17 @@ export function ControlPanel({ sensorData }: ControlPanelProps) {
             disabled={sensorData?.pump_status === true}
           />
           <ControlButton
-            onClick={() => handleCommand('schedule_set', undefined)}
+            onClick={() => handleCommand('schedule_set', undefined, {
+            watering_time: sensorData?.watering_time,
+            watering_duration: sensorData?.watering_duration,
+            schedule_enabled: sensorData?.schedule_enabled,
+          })}
             icon={Settings2}
             label="Sinkron Jadwal"
             variant="success"
           />
         </div>
 
-        <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-200">
-          <strong>Sinkronisasi cepat:</strong> panel ini mengirim perintah langsung ke topic MQTT agar ESP32 dan Arduino menerima perubahan lebih responsif.
-        </div>
       </div>
 
       <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">

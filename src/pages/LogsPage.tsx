@@ -232,15 +232,13 @@ export function LogsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div className="flex items-center gap-3">
           <FileText className="h-6 w-6 text-emerald-600" />
-          <div>
-            <h2 className="text-2xl font-bold text-gray-800">Log & Analitik</h2>
-            <p className="text-sm text-slate-500">Gabungan histori halaman, chat, kontrol, sensor, dan aktivitas pengaturan dalam satu hari penuh.</p>
-          </div>
+          <h2 className="text-2xl font-bold text-gray-800">Log & Analitik</h2>
         </div>
         <div className="flex flex-wrap gap-2">
+
           <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={refresh} className="flex items-center gap-2 rounded-xl bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm ring-1 ring-gray-200">
             <RefreshCw size={16} />
             Muat Ulang

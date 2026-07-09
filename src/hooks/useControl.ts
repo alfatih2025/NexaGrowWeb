@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { getMqttClient, publishMqtt, syncLocalControlState } from '../services/mqtt';
+import { getMqttClient, publishMqtt, publishMqttWithAck, parseMqttJsonPayload, syncLocalControlState } from '../services/mqtt';
 
 export interface ControlLog {
   id: number;
@@ -89,14 +89,18 @@ function resolveControlCommand(action: string, duration?: number, data?: Record<
         }),
       };
     case 'schedule_set':
-      return {
-        topic: 'sproutai/schedule/cmd',
-        payload: JSON.stringify({
-          watering_time: String(data?.watering_time ?? '').trim(),
-          watering_duration: Number(data?.watering_duration ?? 10),
-          schedule_enabled: Boolean(data?.schedule_enabled ?? true),
-        }),
-      };
+      {
+        const enabled = Boolean(data?.schedule_enabled ?? data?.watering_enabled ?? true);
+        return {
+          topic: 'sproutai/schedule/cmd',
+          payload: JSON.stringify({
+            watering_time: String(data?.watering_time ?? '').trim(),
+            watering_duration: Number(data?.watering_duration ?? 10),
+            schedule_enabled: enabled,
+            watering_enabled: enabled,
+          }),
+        };
+      }
     case 'wifi_update': {
       const ssid = String(data?.ssid ?? '').trim();
       const password = String(data?.password ?? '');
@@ -169,10 +173,17 @@ export function useControl() {
         });
       }
 
-      await publishMqtt(mqttCommand.topic, mqttCommand.payload, {
-        retain: false,
-        qos: 1,
-      });
+      if (action === 'settings_sync' || action === 'schedule_set') {
+        await publishMqtt(mqttCommand.topic, mqttCommand.payload, {
+          retain: false,
+          qos: 1,
+        });
+      } else {
+        await publishMqtt(mqttCommand.topic, mqttCommand.payload, {
+          retain: false,
+          qos: 1,
+        });
+      }
 
       syncLocalControlState(action, duration, data);
       pushLog(createLog(action, 'ESP32_001', duration ?? null, 'completed'));
