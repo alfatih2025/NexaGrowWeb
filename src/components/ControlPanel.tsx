@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState, useRef } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Power, Timer, Droplets, Settings2, Clock3 } from 'lucide-react';
+import { Timer, Droplets, Settings2, Clock3 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useControl } from '../hooks/useControl';
 import { SensorData } from '../hooks/useSensorData';
@@ -43,7 +43,7 @@ export function ControlPanel({ sensorData }: ControlPanelProps) {
 
   // Web no longer issues automatic pump_on/pump_off — Arduino handles `controlPompa()`.
 
-  const ControlButton = ({
+  function ControlButton({
     onClick,
     icon: Icon,
     label,
@@ -55,7 +55,7 @@ export function ControlPanel({ sensorData }: ControlPanelProps) {
     label: string;
     variant?: 'primary' | 'danger' | 'warning' | 'success';
     disabled?: boolean;
-  }) => {
+  }) {
     const variants = {
       primary: 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-200',
       danger: 'bg-red-500 hover:bg-red-600 shadow-red-200',
@@ -168,20 +168,44 @@ export function ControlPanel({ sensorData }: ControlPanelProps) {
       <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <div className="flex items-center gap-3 mb-4">
           <Timer className="w-5 h-5 text-emerald-600" />
-          <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Pompa Otomatis 10 Detik</h3>
+          <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Pompa</h3>
         </div>
-        <div className="grid grid-cols-1 gap-3">
+
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <ControlButton
-            onClick={() => handleCommand('pump_10s', 10)}
+            onClick={() => handleCommand('pump_on')}
             icon={Timer}
-            label="Jalankan Pompa 10 Detik"
-            variant="primary"
+            label="Pompa ON"
+            variant="success"
             disabled={sensorData?.pump_status === true}
           />
+          <ControlButton
+            onClick={() => handleCommand('pump_off')}
+            icon={Timer}
+            label="Pompa OFF"
+            variant="danger"
+            disabled={sensorData?.pump_status === false}
+          />
         </div>
-        <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
-          Saat kelembapan tanah rendah, ESP32 akan menyalakan pompa secara mandiri.
-        </p>
+
+        <div className="mt-4">
+          <div className="flex items-center gap-3 mb-3">
+            <Timer className="w-5 h-5 text-emerald-600" />
+            <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">Pompa Otomatis 10 Detik</h3>
+          </div>
+          <div className="grid grid-cols-1 gap-3">
+            <ControlButton
+              onClick={() => handleCommand('pump_10s', 10)}
+              icon={Timer}
+              label="Jalankan Pompa 10 Detik"
+              variant="primary"
+              disabled={sensorData?.pump_status === true}
+            />
+          </div>
+          <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
+            Saat kelembapan tanah rendah, ESP32 akan menyalakan pompa secara mandiri.
+          </p>
+        </div>
       </div>
     </div>
   );
