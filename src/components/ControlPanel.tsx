@@ -17,6 +17,7 @@ export function ControlPanel({ sensorData }: ControlPanelProps) {
 
   const lastPumpStatusRef = useRef<boolean | null>(null);
   const lastPumpOffAtRef = useRef<number>(0);
+  const lastPumpOnAtRef = useRef<number>(0);
 
   // Track pump transitions to approximate Arduino's waktuAkhir for cooldown checks
   useEffect(() => {
@@ -25,6 +26,9 @@ export function ControlPanel({ sensorData }: ControlPanelProps) {
     const prev = lastPumpStatusRef.current ?? null;
     if (prev === true && current === false) {
       lastPumpOffAtRef.current = Date.now();
+    }
+    if (prev === false && current === true) {
+      lastPumpOnAtRef.current = Date.now();
     }
     lastPumpStatusRef.current = current;
   }, [sensorData?.pump_status]);
@@ -106,15 +110,16 @@ export function ControlPanel({ sensorData }: ControlPanelProps) {
       return { label: 'Otomatis (menunggu skor)', action: 'Pompa akan OFF', summary: 'Skor belum tersedia untuk menentukan tindakan.', details };
     }
 
+    // Note: cooldown shown for information only; web will not change pump state.
     if (!cooldownElapsed) {
-      return { label: 'Otomatis (cooldown)', action: 'Pompa akan OFF', summary: 'Cooldown pasca-penyiraman belum selesai.', details };
+      return { label: 'Otomatis (cooldown)', action: 'Pompa akan OFF (hanya tampilan)', summary: 'Cooldown pasca-penyiraman belum selesai. Web hanya menampilkan status; Arduino mengendalikan pompa.', details };
     }
 
     if (currentScore > autoThreshold) {
-      return { label: 'Otomatis (kondisi siram terpenuhi)', action: 'Pompa akan ON', summary: 'Skor dan jadwal terpenuhi, pompa siap dinyalakan.', details };
+      return { label: 'Otomatis (kondisi siram terpenuhi)', action: 'Pompa akan ON (hanya tampilan)', summary: 'Skor dan jadwal terpenuhi. Web hanya menampilkan status; Arduino mengendalikan pompa.', details };
     }
 
-    return { label: 'Otomatis (kondisi belum siram)', action: 'Pompa akan OFF', summary: 'Skor belum mencukupi untuk memicu penyiraman.', details };
+    return { label: 'Otomatis (kondisi belum siram)', action: 'Pompa akan OFF (hanya tampilan)', summary: 'Skor belum mencukupi untuk memicu penyiraman. Web hanya menampilkan status.', details };
   }, [sensorData]);
 
   const handleCommand = async (action: string, duration?: number, data?: Record<string, any>) => {
@@ -126,6 +131,8 @@ export function ControlPanel({ sensorData }: ControlPanelProps) {
       console.error('Command failed:', err);
     }
   };
+
+  // Web no longer issues automatic pump_on/pump_off — Arduino handles `controlPompa()`.
 
   const ControlButton = ({
     onClick,
