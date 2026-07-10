@@ -1,15 +1,27 @@
-import { requireApiAuth, authError } from '../src/lib/apiHelpers/_auth.js';
-import { buildFormulaReference, isArduinoFormulaRequest, sendOpenRouterMessage } from '../src/lib/apiHelpers/_openrouter.js';
+import { requireApiAuth } from '../src/lib/apiHelpers/_auth.js';
+import {
+  buildFormulaReference,
+  isArduinoFormulaRequest,
+  getOpenRouterStatus,
+  sendOpenRouterMessage,
+} from '../src/lib/apiHelpers/_openrouter.js';
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
   if (req.method === 'OPTIONS') return res.status(204).end();
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
-
   if (!requireApiAuth(req, res)) return;
+
+  if (req.method === 'GET') {
+    const status = await getOpenRouterStatus(req.headers.origin);
+    return res.status(status.ok ? 200 : 503).json(status);
+  }
+
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
 
   try {
     const { message, history = [], sensorContext = null } = req.body || {};

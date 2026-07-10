@@ -24,31 +24,18 @@ function openRouterDevPlugin() {
           return;
         }
 
-        if (req.url.startsWith('/api/openrouter-status')) {
+        if (req.url.startsWith('/api/openrouter')) {
           if (req.method === 'OPTIONS') {
             res.statusCode = 204;
             res.end();
             return;
           }
 
-          if (req.method !== 'GET') {
-            res.statusCode = 405;
+          if (req.method === 'GET') {
+            const status = await getOpenRouterStatus(req.headers.origin);
+            res.statusCode = status.ok ? 200 : 503;
             res.setHeader('Content-Type', 'application/json');
-            res.end(JSON.stringify({ error: 'Method not allowed' }));
-            return;
-          }
-
-          const status = await getOpenRouterStatus(req.headers.origin);
-          res.statusCode = status.ok ? 200 : 503;
-          res.setHeader('Content-Type', 'application/json');
-          res.end(JSON.stringify(status));
-          return;
-        }
-
-        if (req.url.startsWith('/api/openrouter-chat')) {
-          if (req.method === 'OPTIONS') {
-            res.statusCode = 204;
-            res.end();
+            res.end(JSON.stringify(status));
             return;
           }
 

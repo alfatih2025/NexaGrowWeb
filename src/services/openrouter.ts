@@ -1,7 +1,6 @@
 import { buildApiHeaders } from '../lib/apiAuth';
 
-const OPENROUTER_CHAT_ENDPOINT = '/api/openrouter-chat';
-const OPENROUTER_STATUS_ENDPOINT = '/api/openrouter-status';
+const OPENROUTER_ENDPOINT = '/api/openrouter';
 const SENSOR_ENDPOINT = '/api/sensor?latest=true';
 
 export type OpenRouterConnectionState =
@@ -260,7 +259,7 @@ function normalizeStatusPayload(payload: unknown): OpenRouterStatus | null {
 
 export async function checkOpenRouterConnection(): Promise<OpenRouterStatus> {
   try {
-    const response = await fetch(OPENROUTER_STATUS_ENDPOINT, { headers: buildApiHeaders() });
+    const response = await fetch(`${OPENROUTER_ENDPOINT}`, { headers: buildApiHeaders() });
     const payload = await response.json().catch(() => null);
     const normalized = normalizeStatusPayload(payload);
     if (!response.ok || !normalized) {
@@ -293,7 +292,7 @@ export async function sendMessageToOpenRouter(
   const shouldAppendCurrentMessage =
     !(lastHistoryItem && lastHistoryItem.role === 'user' && lastHistoryItem.content.trim() === userMessage.trim());
 
-  const response = await fetch(OPENROUTER_CHAT_ENDPOINT, {
+  const response = await fetch(OPENROUTER_ENDPOINT, {
     method: 'POST',
     headers: buildApiHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({

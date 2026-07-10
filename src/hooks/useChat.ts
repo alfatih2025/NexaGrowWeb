@@ -189,7 +189,7 @@ export function useChat() {
         setConnectionStatus({
           state: 'connected',
           label: 'OpenRouter aktif via API',
-          detail: 'Respons AI diterima dari endpoint /api/openrouter-chat.',
+          detail: 'Respons AI diterima dari endpoint /api/openrouter.',
           checkedAt: new Date().toISOString(),
         });
       } catch (err) {
