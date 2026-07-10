@@ -9,6 +9,113 @@ interface ControlPanelProps {
   sensorData: SensorData | null;
 }
 
+function getAutoControlDetails(sensorData: SensorData | null) {
+  if (!sensorData) {
+    return {
+      label: 'N/A',
+      action: 'N/A',
+      summary: 'Data sensor belum tersedia.',
+      details: [],
+    };
+  }
+
+  if (sensorData.device_mode !== 'auto') {
+    return {
+      label: 'Manual',
+      action: 'Pompa mengikuti kontrol manual',
+      summary: 'Perangkat berada dalam mode manual.',
+      details: [],
+    };
+  }
+
+  if (!sensorData.schedule_enabled) {
+    return {
+      label: 'Otomatis (jadwal mati)',
+      action: 'Pompa akan OFF',
+      summary: 'Jadwal penyiraman nonaktif, otomatis tidak akan menghidupkan pompa.',
+      details: [],
+    };
+  }
+
+  const activePhase = sensorData.plant_phase === 'generatif' ? 'generatif' : 'vegetatif';
+  const autoThreshold = activePhase === 'generatif' ? 60 : 55;
+  const raining = typeof sensorData.rain === 'number' && sensorData.rain >= 5;
+  const tooWet = raining;
+  const tooDry = sensorData.soil_moisture >= (sensorData.threshold_atas ?? 100);
+  const currentScore = sensorData.score ?? 0;
+  const isScoreReady = sensorData.score !== null && sensorData.score !== undefined;
+  const now = new Date();
+  const scheduleTime = sensorData.watering_time ?? '';
+  const [scheduleHour, scheduleMinute] = scheduleTime.split(':').map((part) => Number(part));
+  const isScheduleTime =
+    scheduleTime.length === 5 &&
+    Number.isFinite(scheduleHour) &&
+    Number.isFinite(scheduleMinute) &&
+    now.getHours() === scheduleHour &&
+    now.getMinutes() === scheduleMinute;
+
+  const shouldWater = !tooWet && !tooDry && isScheduleTime && isScoreReady && currentScore > autoThreshold;
+
+  const details = [
+    `Mode: Otomatis`,
+    `Fase: ${activePhase === 'generatif' ? 'Generatif' : 'Vegetatif'}`,
+    `Batas skor: ${autoThreshold}`,
+    `Skor saat ini: ${isScoreReady ? currentScore.toFixed(1) : 'tidak tersedia'}`,
+    `Hujan: ${typeof sensorData.rain === 'number' ? sensorData.rain : 'tidak tersedia'}`,
+    `Kelembapan tanah: ${sensorData.soil_moisture.toFixed(1)}%`, 
+    `Batas atas tanah: ${sensorData.threshold_atas ?? 'tidak tersedia'}%`,
+    `Jadwal siram: ${scheduleTime || 'tidak ada'}`,
+    `Waktu saat ini: ${now.getHours().toString().padStart(2, '0')}:${now
+      .getMinutes()
+      .toString()
+      .padStart(2, '0')}`,
+    `Waktu siram aktif: ${isScheduleTime ? 'Ya' : 'Tidak'}`,
+  ];
+
+  if (tooWet || tooDry) {
+    return {
+      label: 'Otomatis (mati karena kondisi sensor)',
+      action: 'Pompa akan OFF',
+      summary: 'Hujan atau kelembapan tanah tinggi mencegah pompa menyala.',
+      details,
+    };
+  }
+
+  if (!isScheduleTime) {
+    return {
+      label: 'Otomatis (menunggu jadwal)',
+      action: 'Pompa akan OFF',
+      summary: 'Belum waktu siram sesuai jadwal.',
+      details,
+    };
+  }
+
+  if (!isScoreReady) {
+    return {
+      label: 'Otomatis (menunggu skor)',
+      action: 'Pompa akan OFF',
+      summary: 'Skor belum tersedia untuk menentukan tindakan.',
+      details,
+    };
+  }
+
+  if (currentScore > autoThreshold) {
+    return {
+      label: 'Otomatis (kondisi siram terpenuhi)',
+      action: 'Pompa akan ON',
+      summary: 'Skor dan jadwal terpenuhi, pompa siap dinyalakan.',
+      details,
+    };
+  }
+
+  return {
+    label: 'Otomatis (kondisi belum siram)',
+    action: 'Pompa akan OFF',
+    summary: 'Score belum mencukupi untuk memicu penyiraman.',
+    details,
+  };
+}
+
 export function ControlPanel({ sensorData }: ControlPanelProps) {
   const { sendCommand, loading } = useControl();
   const [activeMode, setActiveMode] = useState<'manual' | 'auto'>('manual');
@@ -25,6 +132,8 @@ export function ControlPanel({ sensorData }: ControlPanelProps) {
     const duration = sensorData.watering_duration != null ? `${sensorData.watering_duration} detik` : 'durasi belum diatur';
     return `Aktif • ${sensorData.watering_time} • ${duration}`;
   }, [sensorData?.schedule_enabled, sensorData?.watering_time, sensorData?.watering_duration]);
+
+  const autoControl = useMemo(() => getAutoControlDetails(sensorData), [sensorData]);
 
   const handleCommand = async (action: string, duration?: number, data?: Record<string, any>) => {
     try {
@@ -139,40 +248,20 @@ export function ControlPanel({ sensorData }: ControlPanelProps) {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <ControlButton
-            onClick={() => handleCommand('pump_on')}
-            icon={Droplets}
-            label="Nyalakan Pompa"
-            variant="primary"
-            disabled={sensorData?.pump_status === true}
-          />
-          <ControlButton
-            onClick={() => handleCommand('pump_off')}
-            icon={Power}
-            label="Matikan Pompa"
-            variant="danger"
-            disabled={sensorData?.pump_status === false}
-          />
-          <ControlButton
-            onClick={() => handleCommand('pump_10s', 10)}
-            icon={Timer}
-            label="Jalankan 10 Detik"
-            variant="warning"
-            disabled={sensorData?.pump_status === true}
-          />
-          <ControlButton
-            onClick={() => handleCommand('schedule_set', undefined, {
-            watering_time: sensorData?.watering_time,
-            watering_duration: sensorData?.watering_duration,
-            schedule_enabled: sensorData?.schedule_enabled,
-          })}
-            icon={Settings2}
-            label="Sinkron Jadwal"
-            variant="success"
-          />
+        <div className="rounded-2xl border-2 border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-800/60">
+          <div className="flex items-center gap-3">
+            <div className="rounded-2xl bg-slate-200 p-3 text-slate-500 dark:bg-slate-700 dark:text-slate-300">
+              <Settings2 size={24} />
+            </div>
+            <div>
+              <p className="text-sm text-slate-500 dark:text-slate-400">Logika Otomatis</p>
+              <p className="text-lg font-bold text-slate-700 dark:text-slate-100">{autoControl.label}</p>
+            </div>
+          </div>
+          <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
+            {autoControl.summary}
+          </p>
         </div>
-
       </div>
 
       <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">

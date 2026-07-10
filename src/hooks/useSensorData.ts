@@ -17,6 +17,7 @@ export interface SensorData {
   pump_status: boolean;
   led_status?: boolean;
   device_mode?: 'manual' | 'auto' | null;
+  plant_phase?: 'vegetatif' | 'generatif' | null;
   wifi_status: string;
   threshold_kritis?: number | null;
   threshold_atas?: number | null;
@@ -112,6 +113,7 @@ function normalizeSensorDataRow(row: any): SensorData | null {
     formula_vpd: typeof row.formula_vpd === 'string' ? row.formula_vpd : null,
     formula_score: typeof row.formula_score === 'string' ? row.formula_score : null,
     soil_raw_dry: toNumber(row.soil_raw_dry, fallback.soil_raw_dry),
+    plant_phase: row.plant_phase === 'generatif' || row.plant_phase === 'vegetatif' ? row.plant_phase : null,
     created_at: row.created_at ?? new Date().toISOString(),
   };
 }
@@ -148,6 +150,7 @@ function mergeSensorData(base: SensorData | null, live: MqttSensorSnapshot | nul
     formula_vpd: live?.formula_vpd ?? fallback.formula_vpd,
     formula_score: live?.formula_score ?? fallback.formula_score,
     soil_raw_dry: live?.soil_raw_dry ?? fallback.soil_raw_dry,
+    plant_phase: live?.plant_phase ?? fallback.plant_phase,
     created_at: live?.updatedAt ?? fallback.created_at,
   };
 }

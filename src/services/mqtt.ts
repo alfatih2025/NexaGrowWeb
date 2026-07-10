@@ -62,6 +62,7 @@ export interface MqttSensorSnapshot {
   pump_status: boolean;
   led_status: boolean;
   device_mode: 'manual' | 'auto' | null;
+  plant_phase: 'vegetatif' | 'generatif' | null;
   wifi_status: string | null;
   threshold_kritis: number | null;
   threshold_atas: number | null;
@@ -142,6 +143,7 @@ const emptySensorSnapshot: MqttSensorSnapshot = {
   formula_vpd: null,
   formula_score: null,
   soil_raw_dry: null,
+  plant_phase: null,
   updatedAt: null,
   sourceTopic: null,
 };
