@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { Power, Timer, Droplets, Settings2, Clock3 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -9,116 +9,25 @@ interface ControlPanelProps {
   sensorData: SensorData | null;
 }
 
-function getAutoControlDetails(sensorData: SensorData | null) {
-  if (!sensorData) {
-    return {
-      label: 'N/A',
-      action: 'N/A',
-      summary: 'Data sensor belum tersedia.',
-      details: [],
-    };
-  }
-
-  if (sensorData.device_mode !== 'auto') {
-    return {
-      label: 'Manual',
-      action: 'Pompa mengikuti kontrol manual',
-      summary: 'Perangkat berada dalam mode manual.',
-      details: [],
-    };
-  }
-
-  if (!sensorData.schedule_enabled) {
-    return {
-      label: 'Otomatis (jadwal mati)',
-      action: 'Pompa akan OFF',
-      summary: 'Jadwal penyiraman nonaktif, otomatis tidak akan menghidupkan pompa.',
-      details: [],
-    };
-  }
-
-  const activePhase = sensorData.plant_phase === 'generatif' ? 'generatif' : 'vegetatif';
-  const autoThreshold = activePhase === 'generatif' ? 60 : 55;
-  const raining = typeof sensorData.rain === 'number' && sensorData.rain >= 5;
-  const tooWet = raining;
-  const tooDry = sensorData.soil_moisture >= (sensorData.threshold_atas ?? 100);
-  const currentScore = sensorData.score ?? 0;
-  const isScoreReady = sensorData.score !== null && sensorData.score !== undefined;
-  const now = new Date();
-  const scheduleTime = sensorData.watering_time ?? '';
-  const [scheduleHour, scheduleMinute] = scheduleTime.split(':').map((part) => Number(part));
-  const isScheduleTime =
-    scheduleTime.length === 5 &&
-    Number.isFinite(scheduleHour) &&
-    Number.isFinite(scheduleMinute) &&
-    now.getHours() === scheduleHour &&
-    now.getMinutes() === scheduleMinute;
-
-  const shouldWater = !tooWet && !tooDry && isScheduleTime && isScoreReady && currentScore > autoThreshold;
-
-  const details = [
-    `Mode: Otomatis`,
-    `Fase: ${activePhase === 'generatif' ? 'Generatif' : 'Vegetatif'}`,
-    `Batas skor: ${autoThreshold}`,
-    `Skor saat ini: ${isScoreReady ? currentScore.toFixed(1) : 'tidak tersedia'}`,
-    `Hujan: ${typeof sensorData.rain === 'number' ? sensorData.rain : 'tidak tersedia'}`,
-    `Kelembapan tanah: ${sensorData.soil_moisture.toFixed(1)}%`, 
-    `Batas atas tanah: ${sensorData.threshold_atas ?? 'tidak tersedia'}%`,
-    `Jadwal siram: ${scheduleTime || 'tidak ada'}`,
-    `Waktu saat ini: ${now.getHours().toString().padStart(2, '0')}:${now
-      .getMinutes()
-      .toString()
-      .padStart(2, '0')}`,
-    `Waktu siram aktif: ${isScheduleTime ? 'Ya' : 'Tidak'}`,
-  ];
-
-  if (tooWet || tooDry) {
-    return {
-      label: 'Otomatis (mati karena kondisi sensor)',
-      action: 'Pompa akan OFF',
-      summary: 'Hujan atau kelembapan tanah tinggi mencegah pompa menyala.',
-      details,
-    };
-  }
-
-  if (!isScheduleTime) {
-    return {
-      label: 'Otomatis (menunggu jadwal)',
-      action: 'Pompa akan OFF',
-      summary: 'Belum waktu siram sesuai jadwal.',
-      details,
-    };
-  }
-
-  if (!isScoreReady) {
-    return {
-      label: 'Otomatis (menunggu skor)',
-      action: 'Pompa akan OFF',
-      summary: 'Skor belum tersedia untuk menentukan tindakan.',
-      details,
-    };
-  }
-
-  if (currentScore > autoThreshold) {
-    return {
-      label: 'Otomatis (kondisi siram terpenuhi)',
-      action: 'Pompa akan ON',
-      summary: 'Skor dan jadwal terpenuhi, pompa siap dinyalakan.',
-      details,
-    };
-  }
-
-  return {
-    label: 'Otomatis (kondisi belum siram)',
-    action: 'Pompa akan OFF',
-    summary: 'Score belum mencukupi untuk memicu penyiraman.',
-    details,
-  };
-}
+// getAutoControlDetails removed; logic implemented inside component to use runtime refs
 
 export function ControlPanel({ sensorData }: ControlPanelProps) {
   const { sendCommand, loading } = useControl();
   const [activeMode, setActiveMode] = useState<'manual' | 'auto'>('manual');
+
+  const lastPumpStatusRef = useRef<boolean | null>(null);
+  const lastPumpOffAtRef = useRef<number>(0);
+
+  // Track pump transitions to approximate Arduino's waktuAkhir for cooldown checks
+  useEffect(() => {
+    if (!sensorData) return;
+    const current = !!sensorData.pump_status;
+    const prev = lastPumpStatusRef.current ?? null;
+    if (prev === true && current === false) {
+      lastPumpOffAtRef.current = Date.now();
+    }
+    lastPumpStatusRef.current = current;
+  }, [sensorData?.pump_status]);
 
   useEffect(() => {
     if (sensorData?.device_mode === 'auto' || sensorData?.device_mode === 'manual') {
@@ -133,7 +42,80 @@ export function ControlPanel({ sensorData }: ControlPanelProps) {
     return `Aktif • ${sensorData.watering_time} • ${duration}`;
   }, [sensorData?.schedule_enabled, sensorData?.watering_time, sensorData?.watering_duration]);
 
-  const autoControl = useMemo(() => getAutoControlDetails(sensorData), [sensorData]);
+  const autoControl = useMemo(() => {
+    if (!sensorData) {
+      return { label: 'N/A', action: 'N/A', summary: 'Data sensor belum tersedia.', details: [] };
+    }
+
+    if (sensorData.device_mode !== 'auto') {
+      return { label: 'Manual', action: 'Pompa mengikuti kontrol manual', summary: 'Perangkat berada dalam mode manual.', details: [] };
+    }
+
+    if (!sensorData.schedule_enabled) {
+      return { label: 'Otomatis (jadwal mati)', action: 'Pompa akan OFF', summary: 'Jadwal penyiraman nonaktif, otomatis tidak akan menghidupkan pompa.', details: [] };
+    }
+
+    const activePhase = sensorData.plant_phase === 'generatif' ? 'generatif' : 'vegetatif';
+    const autoThreshold = activePhase === 'generatif' ? 60 : 55;
+    const raining = typeof sensorData.rain === 'number' && sensorData.rain >= 5;
+    const tooWet = raining;
+    const tooDry = sensorData.soil_moisture >= (sensorData.threshold_atas ?? 100);
+    const currentScore = sensorData.score ?? 0;
+    const isScoreReady = sensorData.score !== null && sensorData.score !== undefined;
+    const now = new Date();
+    const scheduleTime = sensorData.watering_time ?? '';
+    const [scheduleHour, scheduleMinute] = scheduleTime.split(':').map((part) => Number(part));
+    const isScheduleTime =
+      scheduleTime.length === 5 &&
+      Number.isFinite(scheduleHour) &&
+      Number.isFinite(scheduleMinute) &&
+      now.getHours() === scheduleHour &&
+      now.getMinutes() === scheduleMinute;
+
+    // Cooldown: Arduino exposes "duration_estimate" as milliseconds (durasiOff)
+    const durasiOff = typeof sensorData.duration_estimate === 'number' && !isNaN(sensorData.duration_estimate) ? Number(sensorData.duration_estimate) : 0;
+    const lastOff = lastPumpOffAtRef.current ?? 0;
+    const cooldownElapsed = lastOff === 0 ? true : (Date.now() - lastOff > durasiOff);
+
+    const details = [
+      `Mode: Otomatis`,
+      `Fase: ${activePhase === 'generatif' ? 'Generatif' : 'Vegetatif'}`,
+      `Batas skor: ${autoThreshold}`,
+      `Skor saat ini: ${isScoreReady ? currentScore.toFixed(1) : 'tidak tersedia'}`,
+      `Hujan: ${typeof sensorData.rain === 'number' ? sensorData.rain : 'tidak tersedia'}`,
+      `Kelembapan tanah: ${sensorData.soil_moisture.toFixed(1)}%`, 
+      `Batas atas tanah: ${sensorData.threshold_atas ?? 'tidak tersedia'}%`,
+      `Jadwal siram: ${scheduleTime || 'tidak ada'}`,
+      `Waktu saat ini: ${now.getHours().toString().padStart(2, '0')}:${now
+        .getMinutes()
+        .toString()
+        .padStart(2, '0')}`,
+      `Waktu siram aktif: ${isScheduleTime ? 'Ya' : 'Tidak'}`,
+      `Cooldown elapsed: ${cooldownElapsed ? 'Ya' : 'Tidak'}`,
+    ];
+
+    if (tooWet || tooDry) {
+      return { label: 'Otomatis (mati karena kondisi sensor)', action: 'Pompa akan OFF', summary: 'Hujan atau kelembapan tanah tinggi mencegah pompa menyala.', details };
+    }
+
+    if (!isScheduleTime) {
+      return { label: 'Otomatis (menunggu jadwal)', action: 'Pompa akan OFF', summary: 'Belum waktu siram sesuai jadwal.', details };
+    }
+
+    if (!isScoreReady) {
+      return { label: 'Otomatis (menunggu skor)', action: 'Pompa akan OFF', summary: 'Skor belum tersedia untuk menentukan tindakan.', details };
+    }
+
+    if (!cooldownElapsed) {
+      return { label: 'Otomatis (cooldown)', action: 'Pompa akan OFF', summary: 'Cooldown pasca-penyiraman belum selesai.', details };
+    }
+
+    if (currentScore > autoThreshold) {
+      return { label: 'Otomatis (kondisi siram terpenuhi)', action: 'Pompa akan ON', summary: 'Skor dan jadwal terpenuhi, pompa siap dinyalakan.', details };
+    }
+
+    return { label: 'Otomatis (kondisi belum siram)', action: 'Pompa akan OFF', summary: 'Skor belum mencukupi untuk memicu penyiraman.', details };
+  }, [sensorData]);
 
   const handleCommand = async (action: string, duration?: number, data?: Record<string, any>) => {
     try {
