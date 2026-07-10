@@ -1,5 +1,5 @@
-import { requireApiAuth } from './_auth.js';
-import { getOpenRouterStatus } from './_openrouter.js';
+import { requireApiAuth } from '../src/lib/apiHelpers/_auth.js';
+import { getOpenRouterStatus } from '../src/lib/apiHelpers/_openrouter.js';
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');

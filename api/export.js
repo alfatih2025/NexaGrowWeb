@@ -1,5 +1,5 @@
-import supabase from './_supabase.js';
-import { requireApiAuth } from './_auth.js';
+import supabase from '../src/lib/apiHelpers/_supabase.js';
+import { requireApiAuth } from '../src/lib/apiHelpers/_auth.js';
 
 function csvEscape(value) {
   if (value === null || value === undefined) return '';

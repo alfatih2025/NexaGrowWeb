@@ -1,5 +1,5 @@
-import supabase from './_supabase.js';
-import { requireApiAuth } from './_auth.js';
+import supabase from '../src/lib/apiHelpers/_supabase.js';
+import { requireApiAuth } from '../src/lib/apiHelpers/_auth.js';
 
 async function sendEmailNotification({ recipientEmail, type, message, severity }) {
   const apiKey = (process.env.RESEND_API_KEY || process.env.EMAIL_API_KEY || '').trim();
@@ -58,6 +58,36 @@ export default async function handler(req, res) {
     if (req.method === 'POST') {
       if (!requireApiAuth(req, res)) return;
 
+      const body = req.body || {};
+      const action = body.action || 'create';
+
+      if (action === 'mark_read') {
+        const { id } = body;
+
+        if (id) {
+          const { data, error } = await supabase
+            .from('alerts')
+            .update({ read: true })
+            .eq('id', id)
+            .select()
+            .single();
+          if (error) throw error;
+          return res.status(200).json(data);
+        }
+
+        const { data, error } = await supabase
+          .from('alerts')
+          .update({ read: true })
+          .eq('read', false)
+          .select();
+        if (error) throw error;
+        return res.status(200).json({ markedAsRead: data?.length || 0 });
+      }
+
+      if (action !== 'create') {
+        return res.status(400).json({ error: 'Invalid action' });
+      }
+
       const {
         type,
         message,
@@ -65,7 +95,7 @@ export default async function handler(req, res) {
         read = false,
         send_email = false,
         recipient_email = '',
-      } = req.body || {};
+      } = body;
 
       const { data, error } = await supabase
         .from('alerts')

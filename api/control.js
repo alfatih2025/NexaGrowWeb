@@ -1,5 +1,5 @@
-import supabase from './_supabase.js';
-import { requireApiAuth, authError } from './_auth.js';
+import supabase from '../src/lib/apiHelpers/_supabase.js';
+import { requireApiAuth, authError } from '../src/lib/apiHelpers/_auth.js';
 
 const COMMAND_MAP = {
   pump_on: { topic: 'sproutai/pompa/cmd', payload: 'ON' },

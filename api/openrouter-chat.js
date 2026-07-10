@@ -1,5 +1,5 @@
-import { requireApiAuth, authError } from './_auth.js';
-import { buildFormulaReference, isArduinoFormulaRequest, sendOpenRouterMessage } from './_openrouter.js';
+import { requireApiAuth, authError } from '../src/lib/apiHelpers/_auth.js';
+import { buildFormulaReference, isArduinoFormulaRequest, sendOpenRouterMessage } from '../src/lib/apiHelpers/_openrouter.js';
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');

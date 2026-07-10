@@ -41,12 +41,12 @@ export function useAlerts() {
 
   const markAsRead = useCallback(async (id?: number) => {
     try {
-      await fetch('/api/alerts/read', {
+      await fetch('/api/alerts', {
         method: 'POST',
         headers: buildApiHeaders({
           'Content-Type': 'application/json',
         }),
-        body: JSON.stringify(id ? { id } : {}),
+        body: JSON.stringify({ action: 'mark_read', id }),
       });
       await fetchAlerts();
     } catch (err) {
