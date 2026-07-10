@@ -62,16 +62,35 @@ function resolveControlCommand(action: string, duration?: number, data?: Record<
       return { topic: 'sproutai/mode/cmd', payload: 'AUTO' };
     case 'mode_manual':
       return { topic: 'sproutai/mode/cmd', payload: 'MANUAL' };
-    case 'settings_sync':
+    case 'settings_sync': {
+      const phaseValue = String(data?.plant_phase ?? '').trim().toLowerCase() === 'generatif' ? 1 : 0;
+      const autoModeValue = typeof data?.auto_mode === 'string'
+        ? (String(data?.auto_mode).trim().toLowerCase() === 'manual' ? 0 : 1)
+        : Boolean(data?.auto_mode) ? 1 : 0;
+      // ESP32 firmware expects *full* key names (see firmware/esp32.cpp::tanganiPerintahSettings)
+      // - enable schedule: watering_enabled
+      // - thresholds: soil_threshold_low/high/critical, temp_threshold_low/high, humidity_threshold_low/high
+      // - schedule: watering_time, watering_duration
+      // - mode: auto_mode, plant_phase
+
+      const enabled = Boolean(data?.watering_enabled ?? data?.schedule_enabled ?? true);
+
       return {
         topic: 'sproutai/settings/cmd',
         payload: JSON.stringify({
-          plant_phase: String(data?.plant_phase ?? '').trim(),
+          // mode & phase
+          plant_phase: phaseValue === 1 ? 'generatif' : 'vegetatif',
+          auto_mode: autoModeValue === 1,
+
+          // locations / report (optional, but safe)
           location: String(data?.location ?? '').trim(),
-          weather_location: String(data?.weather_location ?? data?.location ?? '').trim(),
-          weather_condition: String(data?.weather_condition ?? '').trim(),
-          weather_rain_chance: Number(data?.weather_rain_chance ?? data?.rain_chance ?? 0),
-          weather_temperature: Number(data?.weather_temperature ?? data?.temperature ?? 0),
+          watering_time: String(data?.watering_time ?? '').trim(),
+          watering_duration: Number(data?.watering_duration ?? 10),
+
+          // schedule enable
+          watering_enabled: enabled,
+
+          // thresholds (full names)
           temp_threshold_low: Number(data?.temp_threshold_low ?? 0),
           temp_threshold_high: Number(data?.temp_threshold_high ?? 0),
           humidity_threshold_low: Number(data?.humidity_threshold_low ?? 0),
@@ -79,25 +98,26 @@ function resolveControlCommand(action: string, duration?: number, data?: Record<
           soil_threshold_low: Number(data?.soil_threshold_low ?? 0),
           soil_threshold_high: Number(data?.soil_threshold_high ?? 0),
           soil_threshold_critical: Number(data?.soil_threshold_critical ?? 0),
-          watering_time: String(data?.watering_time ?? '').trim(),
-          watering_duration: Number(data?.watering_duration ?? 10),
-          watering_enabled: Boolean(data?.watering_enabled ?? true),
+
+          // report
           auto_report: Boolean(data?.auto_report ?? true),
           report_time: String(data?.report_time ?? '08:00').trim(),
+
+          // user (optional)
           user_name: String(data?.user_name ?? '').trim(),
           user_email: String(data?.user_email ?? '').trim(),
         }),
       };
+    }
     case 'schedule_set':
       {
         const enabled = Boolean(data?.schedule_enabled ?? data?.watering_enabled ?? true);
         return {
           topic: 'sproutai/schedule/cmd',
           payload: JSON.stringify({
+            schedule_enabled: enabled,
             watering_time: String(data?.watering_time ?? '').trim(),
             watering_duration: Number(data?.watering_duration ?? 10),
-            schedule_enabled: enabled,
-            watering_enabled: enabled,
           }),
         };
       }

@@ -69,6 +69,9 @@ export interface MqttSensorSnapshot {
   threshold_bawah: number | null;
   watering_time: string | null;
   watering_duration: number | null;
+  watering_active: boolean | null;
+  auto_state: string | null;
+  auto_reason: string | null;
   schedule_enabled: boolean;
   formula_name: string | null;
   formula_soil: string | null;
@@ -129,6 +132,9 @@ const emptySensorSnapshot: MqttSensorSnapshot = {
   vpd: null,
   duration_estimate: null,
   pump_status: false,
+  watering_active: null,
+  auto_state: null,
+  auto_reason: null,
   led_status: false,
   device_mode: null,
   wifi_status: null,
@@ -370,6 +376,9 @@ function normalizeJsonSensorPayload(payload: string): SensorDelta | null {
       threshold_bawah: parseNumeric(obj.threshold_bawah),
       watering_time: typeof obj.watering_time === 'string' ? obj.watering_time : undefined,
       watering_duration: parseNumeric(obj.watering_duration),
+      watering_active: parseBoolean(obj.watering_active),
+      auto_state: typeof obj.auto_state === 'string' ? obj.auto_state : undefined,
+      auto_reason: typeof obj.auto_reason === 'string' ? obj.auto_reason : undefined,
       schedule_enabled: parseBoolean(obj.schedule_enabled ?? obj.watering_enabled),
       formula_name: typeof obj.formula_name === 'string' ? obj.formula_name : undefined,
       formula_soil: typeof obj.formula_soil === 'string' ? obj.formula_soil : undefined,

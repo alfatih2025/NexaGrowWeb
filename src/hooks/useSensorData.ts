@@ -15,6 +15,7 @@ export interface SensorData {
   vpd?: number | null;
   duration_estimate?: number | null;
   pump_status: boolean;
+  watering_active?: boolean | null;
   led_status?: boolean;
   device_mode?: 'manual' | 'auto' | null;
   plant_phase?: 'vegetatif' | 'generatif' | null;
@@ -24,6 +25,8 @@ export interface SensorData {
   threshold_bawah?: number | null;
   watering_time?: string | null;
   watering_duration?: number | null;
+  auto_state?: string | null;
+  auto_reason?: string | null;
   schedule_enabled?: boolean;
   formula_name?: string | null;
   formula_soil?: string | null;
@@ -63,6 +66,7 @@ function buildFallbackData(): SensorData {
     vpd: 0,
     duration_estimate: 0,
     pump_status: false,
+    watering_active: false,
     led_status: false,
     device_mode: null,
     wifi_status: 'unknown',
@@ -71,6 +75,8 @@ function buildFallbackData(): SensorData {
     threshold_bawah: null,
     watering_time: null,
     watering_duration: null,
+    auto_state: null,
+    auto_reason: null,
     schedule_enabled: true,
     formula_name: null,
     formula_soil: null,
@@ -107,6 +113,9 @@ function normalizeSensorDataRow(row: any): SensorData | null {
     threshold_bawah: toNumber(row.threshold_bawah, fallback.threshold_bawah),
     watering_time: typeof row.watering_time === 'string' ? row.watering_time : null,
     watering_duration: toNumber(row.watering_duration, fallback.watering_duration),
+    watering_active: toBoolean(row.watering_active, fallback.watering_active ?? false),
+    auto_state: typeof row.auto_state === 'string' ? row.auto_state : null,
+    auto_reason: typeof row.auto_reason === 'string' ? row.auto_reason : null,
     schedule_enabled: toBoolean(row.schedule_enabled, fallback.schedule_enabled),
     formula_name: typeof row.formula_name === 'string' ? row.formula_name : null,
     formula_soil: typeof row.formula_soil === 'string' ? row.formula_soil : null,
@@ -144,6 +153,9 @@ function mergeSensorData(base: SensorData | null, live: MqttSensorSnapshot | nul
     threshold_bawah: live?.threshold_bawah ?? fallback.threshold_bawah,
     watering_time: live?.watering_time ?? fallback.watering_time,
     watering_duration: live?.watering_duration ?? fallback.watering_duration,
+    watering_active: live?.watering_active ?? fallback.watering_active,
+    auto_state: live?.auto_state ?? fallback.auto_state,
+    auto_reason: live?.auto_reason ?? fallback.auto_reason,
     schedule_enabled: live?.schedule_enabled ?? fallback.schedule_enabled,
     formula_name: live?.formula_name ?? fallback.formula_name,
     formula_soil: live?.formula_soil ?? fallback.formula_soil,

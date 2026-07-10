@@ -15,24 +15,6 @@ export function ControlPanel({ sensorData }: ControlPanelProps) {
   const { sendCommand, loading } = useControl();
   const [activeMode, setActiveMode] = useState<'manual' | 'auto'>('manual');
 
-  const lastPumpStatusRef = useRef<boolean | null>(null);
-  const lastPumpOffAtRef = useRef<number>(0);
-  const lastPumpOnAtRef = useRef<number>(0);
-
-  // Track pump transitions to approximate Arduino's waktuAkhir for cooldown checks
-  useEffect(() => {
-    if (!sensorData) return;
-    const current = !!sensorData.pump_status;
-    const prev = lastPumpStatusRef.current ?? null;
-    if (prev === true && current === false) {
-      lastPumpOffAtRef.current = Date.now();
-    }
-    if (prev === false && current === true) {
-      lastPumpOnAtRef.current = Date.now();
-    }
-    lastPumpStatusRef.current = current;
-  }, [sensorData?.pump_status]);
-
   useEffect(() => {
     if (sensorData?.device_mode === 'auto' || sensorData?.device_mode === 'manual') {
       setActiveMode(sensorData.device_mode);
@@ -46,81 +28,8 @@ export function ControlPanel({ sensorData }: ControlPanelProps) {
     return `Aktif • ${sensorData.watering_time} • ${duration}`;
   }, [sensorData?.schedule_enabled, sensorData?.watering_time, sensorData?.watering_duration]);
 
-  const autoControl = useMemo(() => {
-    if (!sensorData) {
-      return { label: 'N/A', action: 'N/A', summary: 'Data sensor belum tersedia.', details: [] };
-    }
-
-    if (sensorData.device_mode !== 'auto') {
-      return { label: 'Manual', action: 'Pompa mengikuti kontrol manual', summary: 'Perangkat berada dalam mode manual.', details: [] };
-    }
-
-    if (!sensorData.schedule_enabled) {
-      return { label: 'Otomatis (jadwal mati)', action: 'Pompa akan OFF', summary: 'Jadwal penyiraman nonaktif, otomatis tidak akan menghidupkan pompa.', details: [] };
-    }
-
-    const activePhase = sensorData.plant_phase === 'generatif' ? 'generatif' : 'vegetatif';
-    const autoThreshold = activePhase === 'generatif' ? 60 : 55;
-    const raining = typeof sensorData.rain === 'number' && sensorData.rain >= 5;
-    const tooWet = raining;
-    const tooDry = sensorData.soil_moisture >= (sensorData.threshold_atas ?? 100);
-    const currentScore = sensorData.score ?? 0;
-    const isScoreReady = sensorData.score !== null && sensorData.score !== undefined;
-    const now = new Date();
-    const scheduleTime = sensorData.watering_time ?? '';
-    const [scheduleHour, scheduleMinute] = scheduleTime.split(':').map((part) => Number(part));
-    const isScheduleTime =
-      scheduleTime.length === 5 &&
-      Number.isFinite(scheduleHour) &&
-      Number.isFinite(scheduleMinute) &&
-      now.getHours() === scheduleHour &&
-      now.getMinutes() === scheduleMinute;
-
-    // Cooldown: Arduino exposes "duration_estimate" as milliseconds (durasiOff)
-    const durasiOff = typeof sensorData.duration_estimate === 'number' && !isNaN(sensorData.duration_estimate) ? Number(sensorData.duration_estimate) : 0;
-    const lastOff = lastPumpOffAtRef.current ?? 0;
-    const cooldownElapsed = lastOff === 0 ? true : (Date.now() - lastOff > durasiOff);
-
-    const details = [
-      `Mode: Otomatis`,
-      `Fase: ${activePhase === 'generatif' ? 'Generatif' : 'Vegetatif'}`,
-      `Batas skor: ${autoThreshold}`,
-      `Skor saat ini: ${isScoreReady ? currentScore.toFixed(1) : 'tidak tersedia'}`,
-      `Hujan: ${typeof sensorData.rain === 'number' ? sensorData.rain : 'tidak tersedia'}`,
-      `Kelembapan tanah: ${sensorData.soil_moisture.toFixed(1)}%`, 
-      `Batas atas tanah: ${sensorData.threshold_atas ?? 'tidak tersedia'}%`,
-      `Jadwal siram: ${scheduleTime || 'tidak ada'}`,
-      `Waktu saat ini: ${now.getHours().toString().padStart(2, '0')}:${now
-        .getMinutes()
-        .toString()
-        .padStart(2, '0')}`,
-      `Waktu siram aktif: ${isScheduleTime ? 'Ya' : 'Tidak'}`,
-      `Cooldown elapsed: ${cooldownElapsed ? 'Ya' : 'Tidak'}`,
-    ];
-
-    if (tooWet || tooDry) {
-      return { label: 'Otomatis (mati karena kondisi sensor)', action: 'Pompa akan OFF', summary: 'Hujan atau kelembapan tanah tinggi mencegah pompa menyala.', details };
-    }
-
-    if (!isScheduleTime) {
-      return { label: 'Otomatis (menunggu jadwal)', action: 'Pompa akan OFF', summary: 'Belum waktu siram sesuai jadwal.', details };
-    }
-
-    if (!isScoreReady) {
-      return { label: 'Otomatis (menunggu skor)', action: 'Pompa akan OFF', summary: 'Skor belum tersedia untuk menentukan tindakan.', details };
-    }
-
-    // Note: cooldown shown for information only; web will not change pump state.
-    if (!cooldownElapsed) {
-      return { label: 'Otomatis (cooldown)', action: 'Pompa akan OFF (hanya tampilan)', summary: 'Cooldown pasca-penyiraman belum selesai. Web hanya menampilkan status; Arduino mengendalikan pompa.', details };
-    }
-
-    if (currentScore > autoThreshold) {
-      return { label: 'Otomatis (kondisi siram terpenuhi)', action: 'Pompa akan ON (hanya tampilan)', summary: 'Skor dan jadwal terpenuhi. Web hanya menampilkan status; Arduino mengendalikan pompa.', details };
-    }
-
-    return { label: 'Otomatis (kondisi belum siram)', action: 'Pompa akan OFF (hanya tampilan)', summary: 'Skor belum mencukupi untuk memicu penyiraman. Web hanya menampilkan status.', details };
-  }, [sensorData]);
+  const autoState = sensorData?.auto_state ?? 'unknown';
+  const autoReason = sensorData?.auto_reason ?? 'Status otomatis belum tersedia';
 
   const handleCommand = async (action: string, duration?: number, data?: Record<string, any>) => {
     try {
@@ -243,12 +152,15 @@ export function ControlPanel({ sensorData }: ControlPanelProps) {
               <Settings2 size={24} />
             </div>
             <div>
-              <p className="text-sm text-slate-500 dark:text-slate-400">Logika Otomatis</p>
-              <p className="text-lg font-bold text-slate-700 dark:text-slate-100">{autoControl.label}</p>
+              <p className="text-sm text-slate-500 dark:text-slate-400">Status Otomatis</p>
+              <p className="text-lg font-bold text-slate-700 dark:text-slate-100">{autoState}</p>
             </div>
           </div>
           <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
-            {autoControl.summary}
+            {autoReason}
+          </p>
+          <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
+            {sensorData?.watering_active === true ? 'Pompa sedang menyiram saat ini.' : 'Pompa tidak sedang menyiram.'}
           </p>
         </div>
       </div>
