@@ -1,5 +1,5 @@
 
-import { Info, Cpu, Radar, Bell, Zap, BookOpen, Activity } from 'lucide-react';
+import { Info, Cpu, Radar, Bell, Zap, BookOpen, Activity,Users } from 'lucide-react';
 
 function Feature({
   title,
@@ -71,7 +71,38 @@ export function AboutPage() {
           </p>
         </div>
       </div>
+      <div className="rounded-2xl border border-emerald-100 bg-white/80 p-6 shadow-sm backdrop-blur">
+        <div className="flex items-center gap-2">
+          <div className="rounded-xl border border-emerald-600/20 bg-emerald-600/10 p-2">
+            <Users size={20} className="text-emerald-700" />
+          </div>
+          <div>
+            <h2 className="text-xl font-bold text-gray-900">Tim Pengembang</h2>
+          </div>
+        </div>
 
+        <div className="mt-5 space-y-4">
+          <div>
+            <h3 className="text-lg font-semibold text-emerald-800">Tim C.R.E.S.T</h3>
+            <p className="text-sm text-gray-600">(Club Riset Elektronika Stemsa)</p>
+            <p className="mt-2 text-base font-bold text-gray-900">SMK Negeri 1 Semarang</p>
+          </div>
+
+          <div>
+            <h4 className="text-sm font-bold uppercase tracking-wider text-gray-500">Pembimbing</h4>
+            <p className="mt-1 text-sm font-medium text-gray-800">Rifqi Setyawan S.Pd</p>
+          </div>
+
+          <div>
+            <h4 className="text-sm font-bold uppercase tracking-wider text-gray-500">Anggota Tim</h4>
+            <ul className="mt-2 space-y-1.5 text-sm font-medium text-gray-800">
+              <li>• Habibullah Naja Alfatih Wibowo (Ketua Tim)</li>
+              <li>• Raihan Andrean Maulana</li>
+              <li>• Ilham Hendro Saputro</li>
+            </ul>
+          </div>
+        </div>
+      </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <Feature
           title="Monitoring Real-time"

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { getSensorSnapshot, subscribeMqttStatus, type MqttSensorSnapshot } from '../services/mqtt';
+import { getSensorSnapshot, subscribeMqttStatus, getMqttStatusSnapshot, type MqttSensorSnapshot } from '../services/mqtt';
 
 export interface SensorData {
   id?: number;
@@ -167,15 +167,22 @@ function mergeSensorData(base: SensorData | null, live: MqttSensorSnapshot | nul
   };
 }
 
+// Saat inisialisasi, kita asumsikan fallback DB yang akan me-refresh
+const getInitialSensorData = () => {
+  const isOnline = getMqttStatusSnapshot().mqttConnected;
+  return mergeSensorData(null, isOnline ? getSensorSnapshot() : null);
+};
+
 export function useSensorData(pollInterval = 3000) {
-  const [data, setData] = useState<SensorData | null>(null);
+  const [data, setData] = useState<SensorData | null>(getInitialSensorData);
   const [history, setHistory] = useState<SensorData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const lastDataRef = useRef<SensorData | null>(null);
+  const lastDataRef = useRef<SensorData | null>(getInitialSensorData());
 
   const mergeWithLiveSnapshot = useCallback((next: SensorData | null) => {
-    const live = getSensorSnapshot();
+    const isOnline = getMqttStatusSnapshot().mqttConnected;
+    const live = isOnline ? getSensorSnapshot() : null;
     return mergeSensorData(next ?? lastDataRef.current, live);
   }, []);
 
@@ -193,10 +200,11 @@ export function useSensorData(pollInterval = 3000) {
       const latest = await latestRes.json().catch(() => null);
       const historyData = await historyRes.json().catch(() => []);
 
-      const normalizedLatest = mergeWithLiveSnapshot(normalizeSensorDataRow(latest));
-      if (normalizedLatest) {
-        lastDataRef.current = normalizedLatest;
-        setData(normalizedLatest);
+      const normalizedLatest = normalizeSensorDataRow(latest);
+      const mergedLatest = mergeWithLiveSnapshot(normalizedLatest);
+      if (mergedLatest) {
+        lastDataRef.current = mergedLatest;
+        setData(mergedLatest);
       }
 
       setHistory(Array.isArray(historyData) ? historyData.map(normalizeSensorDataRow).filter(Boolean) as SensorData[] : []);

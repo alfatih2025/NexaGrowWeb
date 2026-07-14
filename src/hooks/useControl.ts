@@ -54,10 +54,7 @@ function resolveControlCommand(action: string, duration?: number, data?: Record<
           duration: duration ?? 10,
         }),
       };
-    case 'led_on':
-      return { topic: 'sproutai/lampu/cmd', payload: 'ON' };
-    case 'led_off':
-      return { topic: 'sproutai/lampu/cmd', payload: 'OFF' };
+    // Kasus led_on dan led_off dihapus karena LED dikontrol ESP32 secara hardware
     case 'mode_auto':
       return { topic: 'sproutai/mode/cmd', payload: 'AUTO' };
     case 'mode_manual':
