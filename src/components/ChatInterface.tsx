@@ -151,6 +151,21 @@ export function ChatInterface({ sensorData = null, settings = null, weatherData 
   const phaseProfile = getPlantPhaseProfile(settings?.plant_phase);
   const weatherLocationLabel = useMemo(() => resolveWeatherLocationPath(settings?.location), [settings?.location]);
 
+  const weatherForecastSummary = useMemo(() => {
+    if (!weatherData?.forecast?.length) return null;
+
+    return weatherData.forecast
+      .slice(0, 5)
+      .map((item) => {
+        const date = new Date(item.datetime);
+        const formatted = Number.isFinite(date.getTime())
+          ? date.toLocaleString('id-ID', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+          : String(item.datetime);
+        return `${formatted}: ${item.weather}, ${item.temperature}°C, peluang hujan ${item.rain_chance}%`;
+      })
+      .join(' | ');
+  }, [weatherData]);
+
   const sensorContext = useMemo(
     () => ({
       device_id: sensorData?.device_id,
@@ -193,8 +208,9 @@ export function ChatInterface({ sensorData = null, settings = null, weatherData 
       weather_temperature: weatherData?.current.temperature ?? null,
       weather_rain_chance: weatherData?.current.rain_chance ?? null,
       weather_forecast_location: weatherLocationLabel,
+      weather_forecast: weatherForecastSummary,
     }),
-    [sensorData, settings, weatherData, weatherLocationLabel],
+    [sensorData, settings, weatherData, weatherLocationLabel, weatherForecastSummary],
   );
 
   const statusTone =

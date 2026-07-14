@@ -83,6 +83,19 @@ export function SettingsPage() {
 
       const normalized = await updateSettings(payload);
 
+      const weatherForecastSummary = weatherData?.forecast?.length
+        ? weatherData.forecast
+            .slice(0, 5)
+            .map((item) => {
+              const date = new Date(item.datetime);
+              const formatted = Number.isFinite(date.getTime())
+                ? date.toLocaleString('id-ID', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+                : String(item.datetime);
+              return `${formatted}: ${item.weather}, ${item.temperature}°C, peluang hujan ${item.rain_chance}%`;
+            })
+            .join(' | ')
+        : null;
+
       await Promise.race([
         Promise.all([
           sendCommand('settings_sync', undefined, {
@@ -92,6 +105,7 @@ export function SettingsPage() {
             weather_condition: weatherData?.current.weather,
             weather_rain_chance: weatherData?.current.rain_chance,
             weather_temperature: weatherData?.current.temperature,
+            weather_forecast: weatherForecastSummary,
             temp_threshold_low: normalized.temp_threshold_low,
             temp_threshold_high: normalized.temp_threshold_high,
             humidity_threshold_low: normalized.humidity_threshold_low,

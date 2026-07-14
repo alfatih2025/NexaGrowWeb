@@ -15,12 +15,22 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import logo from '../assets/nexagrow-logo.png';
 
+export type PageId =
+  | 'dashboard'
+  | 'monitoring'
+  | 'chat'
+  | 'control'
+  | 'weather'
+  | 'logs'
+  | 'settings'
+  | 'about';
+
 interface SidebarProps {
-  currentPage: string;
-  onPageChange: (page: string) => void;
+  currentPage: PageId;
+  onPageChange: (page: PageId) => void;
 }
 
-const menuItems = [
+const menuItems: { id: PageId; label: string; icon: typeof LayoutDashboard }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'monitoring', label: 'Monitoring', icon: Activity },
   { id: 'chat', label: 'AI Chat', icon: MessageSquare },

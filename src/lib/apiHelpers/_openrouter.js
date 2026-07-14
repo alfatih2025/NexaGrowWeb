@@ -138,6 +138,7 @@ function normalizeSensorContext(sensor) {
     weather_temperature: safeNumber(sensor.weather_temperature),
     weather_rain_chance: safeNumber(sensor.weather_rain_chance),
     weather_forecast_location: typeof sensor.weather_forecast_location === 'string' && sensor.weather_forecast_location.trim() ? sensor.weather_forecast_location.trim() : null,
+    weather_forecast: typeof sensor.weather_forecast === 'string' && sensor.weather_forecast.trim() ? sensor.weather_forecast.trim() : null,
   };
 }
 
@@ -229,6 +230,7 @@ function buildSystemPrompt(sensor) {
         formatLine('Kondisi Cuaca', normalized.weather_condition),
         formatLine('Suhu Cuaca', normalized.weather_temperature, ' °C'),
         formatLine('Peluang Hujan', normalized.weather_rain_chance, ' %'),
+        formatLine('Prakiraan Cuaca', normalized.weather_forecast),
       ].join('\n')
     : '- Data cuaca belum tersedia.';
 

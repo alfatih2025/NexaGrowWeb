@@ -81,6 +81,11 @@ function resolveControlCommand(action: string, duration?: number, data?: Record<
 
           // locations / report (optional, but safe)
           location: String(data?.location ?? '').trim(),
+          weather_location: String(data?.weather_location ?? data?.location ?? '').trim(),
+          weather_condition: String(data?.weather_condition ?? '').trim(),
+          weather_temperature: Number(data?.weather_temperature ?? 0),
+          weather_rain_chance: Number(data?.weather_rain_chance ?? 0),
+          weather_forecast: String(data?.weather_forecast ?? '').trim(),
           watering_time: String(data?.watering_time ?? '').trim(),
           watering_duration: Number(data?.watering_duration ?? 10),
 

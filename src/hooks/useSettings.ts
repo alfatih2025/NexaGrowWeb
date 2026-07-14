@@ -208,8 +208,9 @@ export function useSettings() {
         return normalized;
       } catch (err) {
         // Tetap gunakan payload lokal agar dashboard/cuaca tidak balik ke nilai lama.
-        setError(err instanceof Error ? err.message : 'Unknown error');
-        return payload;
+        const message = err instanceof Error ? err.message : 'Unknown error';
+        setError(message);
+        throw new Error(message);
       } finally {
         setLoading(false);
       }

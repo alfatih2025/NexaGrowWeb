@@ -10,5 +10,15 @@
     "VITE_GOOGLE_AUTH_PROXY": "",
     "FULLSTACK_PROJECT_REF": "",
     "FULLSTACK_RESTORE_API_URL": ""
-  }
+  },
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "/api/:path*"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
 }

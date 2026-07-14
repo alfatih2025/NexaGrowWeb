@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { Sidebar } from './components/Sidebar';
+import { Sidebar, type PageId } from './components/Sidebar';
 import { Header } from './components/Header';
 import { Dashboard } from './pages/Dashboard';
 import { Monitoring } from './pages/Monitoring';
@@ -24,8 +24,28 @@ import { recordActivity } from './lib/activityLog';
 
 import './index.css';
 
+function resolvePageFromPath(pathname: string) {
+  const normalized = pathname.replace(/^\/+|\/+$/g, '').toLowerCase();
+  switch (normalized) {
+    case 'dashboard':
+    case 'monitoring':
+    case 'chat':
+    case 'control':
+    case 'weather':
+    case 'logs':
+    case 'settings':
+    case 'about':
+      return normalized;
+    default:
+      return 'dashboard';
+  }
+}
+
 function App() {
-  const [currentPage, setCurrentPage] = useState('dashboard');
+  const [currentPage, setCurrentPage] = useState<PageId>(() => {
+    if (typeof window === 'undefined') return 'dashboard';
+    return resolvePageFromPath(window.location.pathname) as PageId;
+  });
   const { data: sensorData, history, loading: sensorLoading } = useSensorData(3000);
 
   const { status: deviceStatus } = useDeviceStatus(5000);
@@ -65,6 +85,14 @@ function App() {
         title: pageName,
       },
     });
+  }, [currentPage]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const path = currentPage === 'dashboard' ? '/' : `/${currentPage}`;
+    if (window.location.pathname !== path) {
+      window.history.replaceState(null, '', path);
+    }
   }, [currentPage]);
 
   const liveSensorData = useMemo(() => {
@@ -218,10 +246,14 @@ function App() {
     );
   }
 
+  const handlePageChange = (page: PageId) => {
+    setCurrentPage(page);
+  };
+
   return (
     <div className="min-h-screen text-slate-800">
       <div className="flex min-h-screen">
-        <Sidebar currentPage={currentPage} onPageChange={setCurrentPage} />
+        <Sidebar currentPage={currentPage} onPageChange={handlePageChange} />
 
         <div className="flex min-h-screen flex-1 flex-col">
           <Header mqttStatus={mqttStatus} currentPage={currentPage} />

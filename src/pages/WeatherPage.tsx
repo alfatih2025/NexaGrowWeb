@@ -132,6 +132,7 @@ export function WeatherPage({ locationCode, settings, updateSettings }: WeatherP
   const initialCode = locationCode || settings?.location || readStoredSelection() || DEFAULT_WEATHER_LOCATION_CODE;
   const [selection, setSelection] = useState<WeatherSelection>(resolveSelectionFromCode(initialCode));
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [bmkgVillages, setBmkgVillages] = useState<BmkgVillageLocation[]>([]);
   const [loadingVillages, setLoadingVillages] = useState(false);
   const [villagesError, setVillagesError] = useState<string | null>(null);
@@ -264,10 +265,24 @@ export function WeatherPage({ locationCode, settings, updateSettings }: WeatherP
   const handleSave = async () => {
     if (!updateSettings) return;
     setSaveState('saving');
+    setSaveError(null);
     try {
       const normalized = await updateSettings({ location: weatherCode });
       persistStoredSelection(normalized.location);
       setSelection((prev) => ({ ...prev, locationCode: normalized.location }));
+
+      const weatherForecastSummary = data?.forecast?.length
+        ? data.forecast
+            .slice(0, 5)
+            .map((item) => {
+              const date = new Date(item.datetime);
+              const formatted = Number.isFinite(date.getTime())
+                ? date.toLocaleString('id-ID', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+                : String(item.datetime);
+              return `${formatted}: ${item.weather}, ${item.temperature}°C, peluang hujan ${item.rain_chance}%`;
+            })
+            .join(' | ')
+        : null;
 
       await sendCommand('settings_sync', undefined, {
         plant_phase: normalized.plant_phase,
@@ -276,6 +291,7 @@ export function WeatherPage({ locationCode, settings, updateSettings }: WeatherP
         weather_condition: data?.current.weather,
         weather_rain_chance: data?.current.rain_chance,
         weather_temperature: data?.current.temperature,
+        weather_forecast: weatherForecastSummary,
         temp_threshold_low: normalized.temp_threshold_low,
         temp_threshold_high: normalized.temp_threshold_high,
         humidity_threshold_low: normalized.humidity_threshold_low,
@@ -307,7 +323,8 @@ export function WeatherPage({ locationCode, settings, updateSettings }: WeatherP
       });
       setSaveState('saved');
       setTimeout(() => setSaveState('idle'), 2000);
-    } catch {
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Gagal menyimpan lokasi cuaca');
       setSaveState('idle');
     }
   };
@@ -460,6 +477,9 @@ export function WeatherPage({ locationCode, settings, updateSettings }: WeatherP
               {saveState === 'saving' ? 'Menyimpan...' : 'Simpan Lokasi'}
             </button>
           </div>
+          {saveError ? (
+            <div className="rounded-xl bg-rose-50 p-3 text-sm text-rose-700">{saveError}</div>
+          ) : null}
 
         </motion.div>
 
