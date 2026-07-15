@@ -1,5 +1,6 @@
 import supabase from '../src/lib/apiHelpers/_supabase.js';
 import { requireApiAuth, authError } from '../src/lib/apiHelpers/_auth.js';
+import mqtt from 'mqtt'; // Pastikan kamu menginstal library ini (npm install mqtt)
 
 const COMMAND_MAP = {
   pump_on: { topic: 'sproutai/pompa/cmd', payload: 'ON' },
@@ -71,6 +72,39 @@ const COMMAND_MAP = {
   }),
 };
 
+// =====================================================================
+// FUNGSI UTILITY KIRIM MQTT - ASYNC (OPTIMAL UNTUK SERVERLESS/VERCEL)
+// =====================================================================
+async function publishToMqttBroker(topic, payload) {
+  // Secara fleksibel mendeteksi variabel MQTT standar maupun variabel VITE_ milik frontend
+  let brokerUrl = process.env.MQTT_SERVER || process.env.VITE_BROKER_URL || 'broker.hivemq.com';
+  const username = process.env.MQTT_USERNAME || process.env.VITE_MQTT_USERNAME || '';
+  const password = process.env.MQTT_PASSWORD || process.env.VITE_MQTT_PASSWORD || '';
+  const defaultPort = Number(process.env.MQTT_PORT || 1883);
+
+  // Jika broker menggunakan protokol wss (WebSocket Secure), pastikan opsi konfigurasi path '/mqtt' disesuaikan
+  const options = {
+    username: username,
+    password: password,
+    connectTimeout: 7000,
+    rejectUnauthorized: false, // Menghindari kegagalan TLS handshake di serverless cloud
+  };
+
+  // Jika URL broker belum menyertakan port spesifik, gunakan defaultPort
+  if (!/:[0-9]+/.test(brokerUrl)) {
+    options.port = defaultPort;
+  }
+
+  console.log(`[MQTT Client] Mencoba koneksi async ke ${brokerUrl}`);
+  
+  // Membuka koneksi, mengirimkan pesan dengan QoS 1 (At Least Once) & Retain, lalu langsung memutuskannya secara aman
+  const client = await mqtt.connectAsync(brokerUrl, options);
+  await client.publishAsync(topic, payload, { qos: 1, retain: true });
+  await client.endAsync();
+  
+  console.log(`[MQTT Client] Pesan sukses terpublikasi ke topik: ${topic}`);
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -119,25 +153,55 @@ export default async function handler(req, res) {
 
       if (error) throw error;
 
+      // Ambil detail topik & payload yang sudah dirakit
       const resolved = typeof COMMAND_MAP[action] === 'function'
         ? COMMAND_MAP[action](data ?? duration, row.id)
         : COMMAND_MAP[action];
 
+      // ======================================================
+      // PROSES KIRIM REAL-TIME KE BROKER MQTT (AWAIT SECURE TRANSIT)
+      // ======================================================
+      let currentStatus = 'pending';
+      let mqttErrorLog = '';
+
+      try {
+        await publishToMqttBroker(resolved.topic, resolved.payload);
+        currentStatus = 'sent';
+      } catch (mqttErr) {
+        currentStatus = 'failed';
+        mqttErrorLog = mqttErr instanceof Error ? mqttErr.message : String(mqttErr);
+        console.error('[MQTT Error] Gagal mengirim pesan:', mqttErr);
+      }
+
+      // Update status log terbaru ke Supabase berdasarkan hasil kirim MQTT
+      await supabase
+        .from('control_logs')
+        .update({ status: currentStatus })
+        .eq('id', row.id)
+        .catch(() => {});
+
       await supabase.from('activity_logs').insert({
         type: 'control',
-        message: `Command ${action} queued for ${device}`,
-        details: { action, device, duration, command_id: row.id },
+        message: `Command ${action} is ${currentStatus} for ${device}`,
+        details: { 
+          action, 
+          device, 
+          duration, 
+          command_id: row.id,
+          mqtt_error: mqttErrorLog || undefined
+        },
       }).catch(() => {});
 
       return res.status(200).json({
-        success: true,
+        success: currentStatus === 'sent',
         command_id: row.id,
-        status: row.status,
+        status: currentStatus,
         topic: resolved.topic,
         payload: resolved.payload,
         action,
         device,
         duration: row.duration,
+        error: mqttErrorLog || undefined
       });
     }
 

@@ -300,6 +300,7 @@ function consumePendingMqttAcks(topic: string, payload: string) {
 }
 
 function applySettingsSnapshot(detail: Record<string, unknown>, sourceTopic: string) {
+  // Update sensor snapshot for the fields used by dashboard/control (thresholds + schedule).
   const nextSensorDelta: SensorDelta = {
     threshold_kritis: parseNumeric(detail.threshold_kritis ?? detail.soil_threshold_critical),
     threshold_atas: parseNumeric(detail.threshold_atas ?? detail.soil_threshold_high),
@@ -309,21 +310,74 @@ function applySettingsSnapshot(detail: Record<string, unknown>, sourceTopic: str
     schedule_enabled: detail.watering_enabled === undefined
       ? (detail.schedule_enabled === undefined ? undefined : parseBoolean(detail.schedule_enabled))
       : Boolean(detail.watering_enabled),
+
+    // Extra fields are dispatched via dispatchSettingsEvent (useSettings),
+    // not stored in MqttSensorSnapshot because the type doesn't include them.
   };
+
 
   setSensorSnapshot(nextSensorDelta, sourceTopic, true);
 
+  // IMPORTANT: dispatch full settings payload so every page re-renders with latest values.
+  // Payload shape should match what useSettings.normalizeSettings expects.
   const settingsDetail = {
     ...(detail as Record<string, unknown>),
-    watering_time: typeof detail.watering_time === 'string' ? detail.watering_time : undefined,
+
+    // Normalize keys to common web settings keys
+    plant_phase:
+      typeof detail.plant_phase === 'string'
+        ? detail.plant_phase
+        : typeof detail.crop_mode === 'string'
+          ? detail.crop_mode
+          : undefined,
+
+    location:
+      typeof detail.location === 'string'
+        ? detail.location
+        : typeof detail.weather_location === 'string'
+          ? detail.weather_location
+          : undefined,
+
+    watering_time:
+      typeof detail.watering_time === 'string' ? detail.watering_time : undefined,
+
     watering_duration: parseNumeric(detail.watering_duration),
-    watering_enabled: detail.watering_enabled === undefined
-      ? (detail.schedule_enabled === undefined ? undefined : parseBoolean(detail.schedule_enabled))
-      : Boolean(detail.watering_enabled),
+
+    watering_enabled:
+      detail.watering_enabled === undefined
+        ? detail.schedule_enabled === undefined
+          ? undefined
+          : parseBoolean(detail.schedule_enabled)
+        : Boolean(detail.watering_enabled),
+
+    // thresholds: support both ESP32 web payload keys and sensor-derived keys
+    temp_threshold_low: parseNumeric(detail.temp_threshold_low ?? detail.threshold_bawah),
+    temp_threshold_high: parseNumeric(detail.temp_threshold_high ?? detail.threshold_atas),
+    humidity_threshold_low: parseNumeric(detail.humidity_threshold_low ?? detail.h_low ?? detail.humidity_low),
+    humidity_threshold_high: parseNumeric(detail.humidity_threshold_high ?? detail.h_high ?? detail.humidity_high),
+    soil_threshold_low: parseNumeric(detail.soil_threshold_low ?? detail.threshold_bawah),
+    soil_threshold_high: parseNumeric(detail.soil_threshold_high ?? detail.threshold_atas),
+    soil_threshold_critical: parseNumeric(detail.soil_threshold_critical ?? detail.threshold_kritis),
+
+    auto_report:
+      detail.auto_report === undefined ? undefined : Boolean(detail.auto_report),
+    report_time:
+      typeof detail.report_time === 'string' ? detail.report_time : undefined,
+
+    // user_name & user_email dihapus
+    user_name: undefined,
+    user_email: undefined,
+
+    // keep compatibility with some pages that use crop_mode
+    crop_mode:
+      typeof detail.crop_mode === 'string'
+        ? detail.crop_mode
+        : undefined,
   } as Record<string, unknown>;
 
   dispatchSettingsEvent(settingsDetail);
 }
+
 
 function parseNumeric(value: unknown): number | null {
   if (typeof value === 'number') return Number.isFinite(value) ? value : null;

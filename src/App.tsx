@@ -173,8 +173,8 @@ function App() {
 
       for (const item of alerts) {
         await createAlert(item.type, item.message, item.severity, {
-          sendEmail: Boolean(item.sendEmail),
-          recipientEmail: settings.user_email,
+          sendEmail: false,
+          recipientEmail: undefined as any,
           metadata: item.metadata,
         });
       }

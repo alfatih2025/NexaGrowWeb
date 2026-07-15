@@ -1,4 +1,4 @@
-import { Thermometer, Droplets, Power, CloudRain, CalendarClock, ShieldAlert, MessageSquare } from 'lucide-react';
+import { Thermometer, Droplets, Power, CloudRain, CalendarClock, ShieldAlert, MessageSquare, Gauge } from 'lucide-react';
 import { SensorCard } from '../components/SensorCard';
 import { ChatInterface } from '../components/ChatInterface';
 import { SensorData } from '../hooks/useSensorData';
@@ -117,6 +117,21 @@ export function Dashboard({ sensorData, settings, weatherData, health }: Dashboa
         <SensorCard title="Kelembapan Tanah" value={formatOneDecimal(sensorData?.soil_moisture)} unit="%" icon={Droplets} status={health?.statusTone ?? 'warning'} />
         <SensorCard title="Status Pompa" value={sensorData?.pump_status ? 'ON' : 'OFF'} unit="" icon={Power} status={sensorData?.pump_status ? 'good' : 'warning'} />
         <SensorCard title="Jadwal Penyiraman" value={scheduleTime} unit={scheduleDuration != null ? `${scheduleDuration} detik` : ''} icon={CalendarClock} status="good" />
+        <SensorCard
+          title="Skor Sistem"
+          value={sensorData?.score != null ? Number(sensorData.score).toFixed(1) : '-'}
+          unit="/ 100"
+          icon={Gauge}
+          status={
+            sensorData?.score != null
+              ? sensorData.score > 60
+                ? 'good'
+                : sensorData.score >= 40
+                  ? 'warning'
+                  : 'danger'
+              : 'warning'
+          }
+        />
         <SensorCard
           title="Cuaca"
           value={weatherData?.current.weather || '-'}
