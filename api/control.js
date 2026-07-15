@@ -2,6 +2,15 @@ import supabase from '../src/lib/apiHelpers/_supabase.js';
 import { requireApiAuth, authError } from '../src/lib/apiHelpers/_auth.js';
 import mqtt from 'mqtt'; // Pastikan kamu menginstal library ini (npm install mqtt)
 
+// CATATAN UNTUK MAINTAINER: per pengecekan terakhir, SettingsPage.tsx TIDAK
+// memanggil endpoint /api/control ini untuk settings_sync/schedule_set.
+// Yang dipakai adalah hooks/useControl.ts, yang publish MQTT LANGSUNG dari
+// browser lewat services/mqtt (WebSocket), bukan lewat route serverless ini.
+// Endpoint ini tetap berguna sebagai jalur server-side (mis. fallback kalau
+// koneksi WebSocket browser bermasalah, atau dipanggil dari luar dashboard),
+// makanya tetap dijaga formatnya konsisten dengan useControl.ts. Kalau mau
+// dipakai sebagai fallback otomatis, itu perlu ditambahkan sendiri di
+// SettingsPage.tsx / useControl.ts.
 const COMMAND_MAP = {
   pump_on: { topic: 'sproutai/pompa/cmd', payload: 'ON' },
   pump_off: { topic: 'sproutai/pompa/cmd', payload: 'OFF' },
@@ -18,22 +27,29 @@ const COMMAND_MAP = {
   led_off: { topic: 'sproutai/lampu/cmd', payload: 'OFF' },
   mode_auto: { topic: 'sproutai/mode/cmd', payload: 'AUTO' },
   mode_manual: { topic: 'sproutai/mode/cmd', payload: 'MANUAL' },
+  // Key JSON di sini sengaja dibuat SAMA PERSIS dengan payload yang dikirim
+  // hooks/useControl.ts (jalur client-side MQTT yang sebenarnya dipakai
+  // SettingsPage.tsx) supaya kedua jalur pengiriman command konsisten dan
+  // tidak membingungkan saat debugging. Firmware (tanganiPerintahSettings di
+  // ESP32) tetap menerima key singkat lama (pp/rc/tk/wt/wd/se/am) untuk
+  // kompatibilitas mundur, jadi mengganti ke key penuh di sini aman.
   settings_sync: (data, commandId) => {
-    const phaseValue = String(data?.plant_phase ?? '').trim().toLowerCase() === 'generatif' ? 1 : 0;
+    const phaseValue = String(data?.plant_phase ?? '').trim().toLowerCase() === 'generatif' ? 'generatif' : 'vegetatif';
     const autoModeValue = typeof data?.auto_mode === 'string'
-      ? (String(data?.auto_mode).trim().toLowerCase() === 'manual' ? 0 : 1)
-      : Boolean(data?.auto_mode) ? 1 : 0;
+      ? String(data?.auto_mode).trim().toLowerCase() !== 'manual'
+      : Boolean(data?.auto_mode ?? true);
     const enabled = Boolean(data?.watering_enabled ?? data?.schedule_enabled ?? true);
 
     return {
       topic: 'sproutai/settings/cmd',
       payload: JSON.stringify({
         command_id: commandId,
-        pp: phaseValue,
+        plant_phase: phaseValue,
+        auto_mode: autoModeValue,
         location: String(data?.location || '').trim(),
         weather_location: String(data?.weather_location || data?.location || '').trim(),
         weather_condition: String(data?.weather_condition || '').trim(),
-        rc: Number(data?.weather_rain_chance ?? data?.rain_chance ?? 0),
+        weather_rain_chance: Number(data?.weather_rain_chance ?? data?.rain_chance ?? 0),
         weather_temperature: Number(data?.weather_temperature ?? data?.temperature ?? 0),
         temp_threshold_low: Number(data?.temp_threshold_low ?? 0),
         temp_threshold_high: Number(data?.temp_threshold_high ?? 0),
@@ -41,11 +57,10 @@ const COMMAND_MAP = {
         humidity_threshold_high: Number(data?.humidity_threshold_high ?? 0),
         soil_threshold_low: Number(data?.soil_threshold_low ?? 0),
         soil_threshold_high: Number(data?.soil_threshold_high ?? 0),
-        tk: Number(data?.soil_threshold_critical ?? 0),
-        wt: String(data?.watering_time || '').trim(),
-        wd: Number(data?.watering_duration ?? 10),
-        se: enabled ? 1 : 0,
-        am: autoModeValue,
+        soil_threshold_critical: Number(data?.soil_threshold_critical ?? 0),
+        watering_time: String(data?.watering_time || '').trim(),
+        watering_duration: Number(data?.watering_duration ?? 10),
+        watering_enabled: enabled,
         auto_report: Boolean(data?.auto_report ?? true),
         report_time: String(data?.report_time ?? '08:00').trim(),
         user_name: String(data?.user_name || '').trim(),
@@ -59,7 +74,7 @@ const COMMAND_MAP = {
       command_id: commandId,
       watering_time: String(data?.watering_time || '').trim(),
       watering_duration: Number(data?.watering_duration || 10),
-      schedule_enabled: Boolean(data?.schedule_enabled ?? true),
+      schedule_enabled: Boolean(data?.schedule_enabled ?? data?.watering_enabled ?? true),
     }),
   }),
   wifi_update: (data, commandId) => ({

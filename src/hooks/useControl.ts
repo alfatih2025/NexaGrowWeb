@@ -10,6 +10,16 @@ export interface ControlLog {
   executed_at: string;
 }
 
+// sendCommand() SELALU resolve dengan bentuk ini (tidak pernah reject) —
+// caller WAJIB mengecek field `success`. Sebelumnya di SettingsPage.tsx hasil
+// ini dibuang lewat `.catch(() => undefined)` yang tidak pernah kepanggil
+// (karena promise-nya memang tidak pernah reject), sehingga kegagalan kirim
+// ke ESP32 tidak pernah terlihat di UI walau field `success: false` sudah ada.
+export interface SendCommandResult {
+  success: boolean;
+  error?: string;
+}
+
 const STORAGE_KEY = 'nexagrow-control-logs';
 
 function readStoredLogs(): ControlLog[] {
@@ -155,7 +165,7 @@ export function useControl() {
     return stored;
   }, []);
 
-  const sendCommand = useCallback(async (action: string, duration?: number, data?: Record<string, any>) => {
+  const sendCommand = useCallback(async (action: string, duration?: number, data?: Record<string, any>): Promise<SendCommandResult> => {
     setLoading(true);
     setError(null);
 

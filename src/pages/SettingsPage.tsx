@@ -19,6 +19,10 @@ export function SettingsPage() {
   const [formData, setFormData] = useState<Partial<SettingsType>>({});
   const [isDirty, setIsDirty] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+  // Status pengiriman MQTT ke ESP32, terpisah dari status simpan ke database.
+  // Sebelumnya hasil sendCommand() dibuang begitu saja sehingga kegagalan MQTT
+  // tidak pernah terlihat di UI.
+  const [syncError, setSyncError] = useState<string | null>(null);
   const [wifiSsid, setWifiSsid] = useState('');
   const [wifiPassword, setWifiPassword] = useState('');
   const [wifiStatus, setWifiStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
@@ -62,6 +66,7 @@ export function SettingsPage() {
 
   const handleSave = async () => {
     setSaveStatus('saving');
+    setSyncError(null);
     try {
       const payload: Partial<SettingsType> = {
         ...formData,
@@ -83,6 +88,20 @@ export function SettingsPage() {
 
       const normalized = await updateSettings(payload);
 
+      // DEBUG: pastikan payload threshold valid dan benar-benar dikirim ke MQTT.
+      // Buka DevTools Console di browser untuk melihat output ini.
+      console.log('[SettingsPage] settings_sync payload', {
+        soil_threshold_low: normalized.soil_threshold_low,
+        soil_threshold_high: normalized.soil_threshold_high,
+        soil_threshold_critical: normalized.soil_threshold_critical,
+        watering_time: normalized.watering_time,
+        watering_duration: normalized.watering_duration,
+        watering_enabled: normalized.watering_enabled,
+        plant_phase: normalized.plant_phase,
+      });
+
+
+
       const weatherForecastSummary = weatherData?.forecast?.length
         ? weatherData.forecast
             .slice(0, 5)
@@ -96,61 +115,80 @@ export function SettingsPage() {
             .join(' | ')
         : null;
 
-      await Promise.race([
-        Promise.all([
-          sendCommand('settings_sync', undefined, {
-            plant_phase: normalized.plant_phase,
-            location: normalized.location,
-            weather_location: normalized.location,
-            weather_condition: weatherData?.current.weather,
-            weather_rain_chance: weatherData?.current.rain_chance,
-            weather_temperature: weatherData?.current.temperature,
-            weather_forecast: weatherForecastSummary,
-            temp_threshold_low: normalized.temp_threshold_low,
-            temp_threshold_high: normalized.temp_threshold_high,
-            humidity_threshold_low: normalized.humidity_threshold_low,
-            humidity_threshold_high: normalized.humidity_threshold_high,
-            soil_threshold_low: normalized.soil_threshold_low,
-            soil_threshold_high: normalized.soil_threshold_high,
-            soil_threshold_critical: normalized.soil_threshold_critical,
-            watering_time: normalized.watering_time,
-            watering_duration: normalized.watering_duration,
-            watering_enabled: normalized.watering_enabled,
-            auto_report: normalized.auto_report,
-            report_time: normalized.report_time,
-          }).catch(() => undefined),
-
-          sendCommand('schedule_set', undefined, {
-            watering_time: normalized.watering_time,
-            watering_duration: normalized.watering_duration,
-            schedule_enabled: normalized.watering_enabled,
-            watering_enabled: normalized.watering_enabled,
-          }).catch(() => undefined),
-        ]),
-        new Promise((resolve) => window.setTimeout(() => resolve(undefined), 1800)),
+      // PENTING: tidak lagi di-race lawan timeout arbitrer, dan hasilnya
+      // tidak lagi dibuang. sendCommand() sendiri sudah punya timeout internal
+      // (nunggu koneksi MQTT max ~10 detik) dan SELALU resolve dengan bentuk
+      // { success, error } — jadi wajib dicek di sini, bukan cuma dipanggil.
+      const [settingsSyncResult, scheduleSetResult] = await Promise.all([
+        sendCommand('settings_sync', undefined, {
+          plant_phase: normalized.plant_phase,
+          location: normalized.location,
+          weather_location: normalized.location,
+          weather_condition: weatherData?.current.weather,
+          weather_rain_chance: weatherData?.current.rain_chance,
+          weather_temperature: weatherData?.current.temperature,
+          weather_forecast: weatherForecastSummary,
+          temp_threshold_low: normalized.temp_threshold_low,
+          temp_threshold_high: normalized.temp_threshold_high,
+          humidity_threshold_low: normalized.humidity_threshold_low,
+          humidity_threshold_high: normalized.humidity_threshold_high,
+          soil_threshold_low: normalized.soil_threshold_low,
+          soil_threshold_high: normalized.soil_threshold_high,
+          soil_threshold_critical: normalized.soil_threshold_critical,
+          watering_time: normalized.watering_time,
+          watering_duration: normalized.watering_duration,
+          watering_enabled: normalized.watering_enabled,
+          auto_report: normalized.auto_report,
+          report_time: normalized.report_time,
+        }),
+        sendCommand('schedule_set', undefined, {
+          watering_time: normalized.watering_time,
+          watering_duration: normalized.watering_duration,
+          schedule_enabled: normalized.watering_enabled,
+          watering_enabled: normalized.watering_enabled,
+        }),
       ]);
+
+      const failedCommands: string[] = [];
+      if (!settingsSyncResult.success) failedCommands.push('settings_sync');
+      if (!scheduleSetResult.success) failedCommands.push('schedule_set');
+      const mqttSynced = failedCommands.length === 0;
 
       recordActivity({
         source: 'settings',
         type: 'settings_saved',
         title: 'Pengaturan disimpan',
-        message: `Fase ${normalized.plant_phase} dan ambang batas sensor berhasil diperbarui.`,
+        message: mqttSynced
+          ? `Fase ${normalized.plant_phase} dan ambang batas sensor berhasil diperbarui & dikirim ke ESP32.`
+          : `Fase ${normalized.plant_phase} dan ambang batas sensor tersimpan di database, tapi GAGAL dikirim ke ESP32 (${failedCommands.join(', ')}).`,
         details: {
           phase: normalized.plant_phase,
           location: normalized.location,
           temp: [normalized.temp_threshold_low, normalized.temp_threshold_high],
           humidity: [normalized.humidity_threshold_low, normalized.humidity_threshold_high],
           soil: [normalized.soil_threshold_low, normalized.soil_threshold_high, normalized.soil_threshold_critical],
+          mqtt_synced: mqttSynced,
         },
       });
 
       setFormData(normalized);
       setIsDirty(false);
       setSaveStatus('saved');
-      setTimeout(() => setSaveStatus('idle'), 2000);
-    } catch {
+
+      if (!mqttSynced) {
+        // Data sudah aman di database, tapi ESP32 belum tentu menerima
+        // perubahan ini. Tampilkan alasannya supaya tidak menyesatkan.
+        const reason = settingsSyncResult.error || scheduleSetResult.error || 'MQTT tidak terkirim';
+        setSyncError(`Tersimpan, tapi gagal dikirim ke ESP32 (${failedCommands.join(', ')}): ${reason}`);
+      } else {
+        setSyncError(null);
+      }
+
+      setTimeout(() => setSaveStatus('idle'), 2500);
+    } catch (err) {
       setIsDirty(false);
       setSaveStatus('idle');
+      setSyncError(err instanceof Error ? err.message : 'Gagal menyimpan pengaturan');
     }
   };
 
@@ -328,8 +366,13 @@ export function SettingsPage() {
       </div>
 
       <div className="flex items-center justify-between">
-        <div className="text-sm text-gray-500">
-          {saveStatus === 'saved' ? 'Pengaturan berhasil disimpan.' : ''}
+        <div className="text-sm">
+          {saveStatus === 'saved' && !syncError && (
+            <span className="text-gray-500">Pengaturan tersimpan &amp; berhasil dikirim ke ESP32.</span>
+          )}
+          {saveStatus === 'saved' && syncError && (
+            <span className="text-amber-600">{syncError}</span>
+          )}
         </div>
         <button onClick={handleSave} className="rounded-xl bg-emerald-600 px-6 py-3 font-semibold text-white shadow-sm">
           {saveStatus === 'saving' ? 'Menyimpan...' : 'Simpan Pengaturan'}
