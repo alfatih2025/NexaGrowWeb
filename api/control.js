@@ -1,5 +1,6 @@
 import supabase from '../src/lib/apiHelpers/_supabase.js';
 import { requireApiAuth, authError } from '../src/lib/apiHelpers/_auth.js';
+import { applyCors, getErrorMessage } from '../src/lib/apiHelpers/_http.js';
 import mqtt from 'mqtt'; // Pastikan kamu menginstal library ini (npm install mqtt)
 
 // CATATAN UNTUK MAINTAINER: per pengecekan terakhir, SettingsPage.tsx TIDAK
@@ -121,10 +122,7 @@ async function publishToMqttBroker(topic, payload) {
 }
 
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key');
-  if (req.method === 'OPTIONS') return res.status(204).end();
+  if (applyCors(req, res, { methods: 'GET, POST, OPTIONS' })) return;
   if (!supabase) return res.status(500).json({ error: 'Supabase belum dikonfigurasi' });
 
   try {
@@ -222,6 +220,6 @@ export default async function handler(req, res) {
 
     return res.status(405).json({ error: 'Method not allowed' });
   } catch (error) {
-    return res.status(500).json({ error: error instanceof Error ? error.message : 'Control error' });
+    return res.status(500).json({ error: getErrorMessage(error, 'Control error') });
   }
 }

@@ -1,20 +1,6 @@
 import supabase from '../src/lib/apiHelpers/_supabase.js';
-
-function toNumber(value, fallback = null) {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : fallback;
-}
-
-function toBoolean(value, fallback = false) {
-  if (typeof value === 'boolean') return value;
-  if (typeof value === 'string') {
-    const normalized = value.trim().toLowerCase();
-    if (['true', '1', 'on', 'yes', 'y'].includes(normalized)) return true;
-    if (['false', '0', 'off', 'no', 'n'].includes(normalized)) return false;
-  }
-  if (typeof value === 'number') return value !== 0;
-  return fallback;
-}
+import { applyCors, getErrorMessage } from '../src/lib/apiHelpers/_http.js';
+import { toNumber, toBoolean } from '../src/lib/apiHelpers/_coerce.js';
 
 function normalizeRow(row) {
   if (!row || typeof row !== 'object') return null;
@@ -52,10 +38,7 @@ function normalizeRow(row) {
 }
 
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  if (req.method === 'OPTIONS') return res.status(204).end();
+  if (applyCors(req, res, { methods: 'GET, POST, PUT, DELETE, OPTIONS', headers: 'Content-Type, Authorization' })) return;
 
   try {
     if (req.method === 'GET') {
@@ -126,6 +109,6 @@ export default async function handler(req, res) {
     res.status(405).json({ error: 'Method not allowed' });
   } catch (err) {
     console.error('Sensor API error:', err);
-    res.status(500).json({ error: err?.message || 'Unknown error' });
+    res.status(500).json({ error: getErrorMessage(err) });
   }
 }

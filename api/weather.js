@@ -1,4 +1,6 @@
 import supabase from '../src/lib/apiHelpers/_supabase.js';
+import { applyCors } from '../src/lib/apiHelpers/_http.js';
+import { toNumber } from '../src/lib/apiHelpers/_coerce.js';
 
 const DEFAULT_LOCATION_CODE = '33.74.07.1010';
 const WEATHER_LOCATION_MAP = {
@@ -65,11 +67,6 @@ function json(statusCode, body) {
   };
 }
 
-function toNumber(value, fallback) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
-
 function getRainChance(weatherCode) {
   const normalized = String(weatherCode ?? '').trim();
   if (normalized === '0') return 0;
@@ -119,10 +116,7 @@ function transformBmkgWeather(data, fallbackLocation = DEFAULT_WEATHER.location)
 }
 
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  if (req.method === 'OPTIONS') return res.status(204).end();
+  if (applyCors(req, res, { methods: 'GET, OPTIONS', headers: 'Content-Type, Authorization' })) return;
 
   try {
     const locationCode = req.query?.location || req.query?.adm4 || DEFAULT_LOCATION_CODE;

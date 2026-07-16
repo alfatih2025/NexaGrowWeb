@@ -1,3 +1,5 @@
+import { applyCors } from '../src/lib/apiHelpers/_http.js';
+
 const SEMARANG_DISTRICT_MAP = {
   '33.74.01': 'Semarang Tengah',
   '33.74.02': 'Semarang Utara',
@@ -73,10 +75,7 @@ function parseLocationLinks(html, districtCode, districtLabel) {
 }
 
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  if (req.method === 'OPTIONS') return res.status(204).end();
+  if (applyCors(req, res, { methods: 'GET, OPTIONS', headers: 'Content-Type, Authorization' })) return;
 
   try {
     const districtCode = String(req.query?.district || '').trim();
