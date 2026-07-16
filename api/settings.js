@@ -148,11 +148,14 @@ export default async function handler(req, res) {
 
       if (error) throw error;
 
-      await supabase.from('activity_logs').insert({
+      const { error: activityLogError } = await supabase.from('activity_logs').insert({
         type: 'settings',
         message: 'Settings updated',
         details: updates,
-      }).catch(() => {});
+      });
+      if (activityLogError) {
+        console.error('Settings API: gagal menulis activity_logs:', activityLogError);
+      }
 
       return res.status(200).json(data);
     }

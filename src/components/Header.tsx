@@ -21,7 +21,7 @@ const pageTitles: Record<string, string> = {
 };
 
 export function Header({ mqttStatus, currentPage }: HeaderProps) {
-  const { alerts, unreadCount, markAsRead, fetchAlerts } = useAlerts();
+  const { alerts, unreadCount, error: alertsError, markAsRead, fetchAlerts } = useAlerts();
   const [open, setOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const isOnline = mqttStatus.systemOnline;
@@ -116,7 +116,13 @@ export function Header({ mqttStatus, currentPage }: HeaderProps) {
                   </div>
 
                   <div className="max-h-[22rem] space-y-2 overflow-y-auto p-3">
-                    {alerts.length === 0 && (
+                    {alertsError && (
+                      <div className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                        {alertsError}
+                      </div>
+                    )}
+
+                    {alerts.length === 0 && !alertsError && (
                       <div className="rounded-2xl border border-dashed border-slate-200 p-5 text-center text-sm text-slate-500">
                         Belum ada notifikasi.
                       </div>

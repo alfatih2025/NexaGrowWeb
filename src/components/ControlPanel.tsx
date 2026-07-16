@@ -12,8 +12,9 @@ interface ControlPanelProps {
 // getAutoControlDetails removed; logic implemented inside component to use runtime refs
 
 export function ControlPanel({ sensorData }: ControlPanelProps) {
-  const { sendCommand, loading } = useControl();
+  const { sendCommand, loading, error } = useControl();
   const [activeMode, setActiveMode] = useState<'manual' | 'auto'>('manual');
+  const [commandError, setCommandError] = useState<string | null>(null);
 
   useEffect(() => {
     if (sensorData?.device_mode === 'auto' || sensorData?.device_mode === 'manual') {
@@ -32,14 +33,20 @@ export function ControlPanel({ sensorData }: ControlPanelProps) {
   const autoReason = sensorData?.auto_reason ?? 'Status otomatis belum tersedia';
 
   const handleCommand = async (action: string, duration?: number, data?: Record<string, any>) => {
-    try {
-      await sendCommand(action, duration, data);
-      if (action === 'mode_auto') setActiveMode('auto');
-      if (action === 'mode_manual') setActiveMode('manual');
-    } catch (err) {
-      console.error('Command failed:', err);
+    setCommandError(null);
+    // sendCommand never rejects — it resolves with { success, error }, so the
+    // outcome must be read from the returned result rather than a try/catch.
+    const result = await sendCommand(action, duration, data);
+    if (!result.success) {
+      console.error('Command failed:', result.error);
+      setCommandError(result.error || `Perintah "${action}" gagal dikirim`);
+      return;
     }
+    if (action === 'mode_auto') setActiveMode('auto');
+    if (action === 'mode_manual') setActiveMode('manual');
   };
+
+  const displayError = commandError ?? error;
 
   // Web no longer issues automatic pump_on/pump_off — Arduino handles `controlPompa()`.
 
@@ -81,6 +88,12 @@ export function ControlPanel({ sensorData }: ControlPanelProps) {
 
   return (
     <div className="space-y-6">
+      {displayError && (
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
+          Gagal mengirim perintah ke perangkat: {displayError}
+        </div>
+      )}
+
       <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <div className="mb-6 flex items-center justify-between gap-4">
           <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Mode Operasi</h3>

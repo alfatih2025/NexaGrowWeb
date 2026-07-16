@@ -188,14 +188,18 @@ export default async function handler(req, res) {
         console.error('[MQTT Error] Gagal mengirim pesan:', mqttErr);
       }
 
-      // Update status log terbaru ke Supabase berdasarkan hasil kirim MQTT
-      await supabase
+      // Update status log terbaru ke Supabase berdasarkan hasil kirim MQTT.
+      // Kegagalan di sini tidak boleh menggagalkan respons ke client, tapi
+      // tetap harus terlihat di log server (jangan ditelan diam-diam).
+      const { error: statusUpdateError } = await supabase
         .from('control_logs')
         .update({ status: currentStatus })
-        .eq('id', row.id)
-        .catch(() => {});
+        .eq('id', row.id);
+      if (statusUpdateError) {
+        console.error('[Control] Gagal update status control_logs:', statusUpdateError);
+      }
 
-      await supabase.from('activity_logs').insert({
+      const { error: activityLogError } = await supabase.from('activity_logs').insert({
         type: 'control',
         message: `Command ${action} is ${currentStatus} for ${device}`,
         details: { 
@@ -205,7 +209,10 @@ export default async function handler(req, res) {
           command_id: row.id,
           mqtt_error: mqttErrorLog || undefined
         },
-      }).catch(() => {});
+      });
+      if (activityLogError) {
+        console.error('[Control] Gagal menulis activity_logs:', activityLogError);
+      }
 
       return res.status(200).json({
         success: currentStatus === 'sent',
