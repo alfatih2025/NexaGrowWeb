@@ -205,17 +205,18 @@ export function useControl() {
         });
       }
 
-      if (action === 'settings_sync' || action === 'schedule_set') {
-        await publishMqtt(mqttCommand.topic, mqttCommand.payload, {
-          retain: false,
-          qos: 1,
-        });
-      } else {
-        await publishMqtt(mqttCommand.topic, mqttCommand.payload, {
-          retain: false,
-          qos: 1,
-        });
-      }
+      // Konfigurasi (settings/jadwal) harus RETAINED: ESP32 memakai PubSubClient
+      // yang selalu clean-session, jadi pesan QoS1 non-retained yang dikirim saat
+      // device sedang offline/reconnect akan dibuang broker dan tidak pernah
+      // sampai. Dengan retain=true, broker mengirim ulang nilai terakhir begitu
+      // ESP32 subscribe kembali, sehingga perubahan settings selalu diterima.
+      // Perintah sesaat (pump/mode) tetap non-retained agar tidak "menyala ulang"
+      // saat device reconnect.
+      const isConfigCommand = action === 'settings_sync' || action === 'schedule_set';
+      await publishMqtt(mqttCommand.topic, mqttCommand.payload, {
+        retain: isConfigCommand,
+        qos: 1,
+      });
 
       syncLocalControlState(action, duration, data);
       pushLog(createLog(action, 'ESP32_001', duration ?? null, 'completed'));
