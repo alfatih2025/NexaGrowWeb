@@ -224,12 +224,16 @@ export default async function handler(req, res) {
             }),
           });
 
-          const openRouterData = await openRouterRes.json();
+          const openRouterData = await openRouterRes.json().catch(() => null);
+          if (!openRouterRes.ok) {
+            const detail = openRouterData?.error?.message || `status ${openRouterRes.status}`;
+            throw new Error(`OpenRouter gagal: ${detail}`);
+          }
           aiResponse = openRouterData?.choices?.[0]?.message?.content ||
             'Maaf, saya belum bisa memproses pertanyaan ini.';
         } catch (error) {
-aiResponse = `Maaf, saya sedang kesulitan terhubung ke AI Online. ${error instanceof Error ? error.message : ''}`;
-
+          console.error('[Chat] OpenRouter request failed:', error);
+          aiResponse = `Maaf, saya sedang kesulitan terhubung ke AI Online. ${error instanceof Error ? error.message : ''}`;
         }
       }
 
@@ -239,6 +243,10 @@ aiResponse = `Maaf, saya sedang kesulitan terhubung ke AI Online. ${error instan
         content: aiResponse,
         metadata: buildChatMetadata(latestSensor, latestSettings || {}, 'assistant'),
       }).select().single();
+
+      if (assistantMessage.error) {
+        console.error('[Chat] Gagal menyimpan pesan asisten:', assistantMessage.error);
+      }
 
       return res.status(200).json({
         success: true,

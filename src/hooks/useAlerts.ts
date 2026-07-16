@@ -20,6 +20,7 @@ export function useAlerts() {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchAlerts = useCallback(async () => {
     setLoading(true);
@@ -27,13 +28,15 @@ export function useAlerts() {
       const res = await fetch('/api/alerts', {
         headers: buildApiHeaders(),
       });
-      if (!res.ok) throw new Error('Failed to fetch alerts');
+      if (!res.ok) throw new Error(`Failed to fetch alerts (${res.status})`);
       const data = await res.json();
       const alertData = Array.isArray(data) ? data : [];
       setAlerts(alertData);
       setUnreadCount(alertData.filter((a: Alert) => !a.read).length);
+      setError(null);
     } catch (err) {
       console.error('Error fetching alerts:', err);
+      setError(err instanceof Error ? err.message : 'Gagal memuat notifikasi');
     } finally {
       setLoading(false);
     }
@@ -41,16 +44,19 @@ export function useAlerts() {
 
   const markAsRead = useCallback(async (id?: number) => {
     try {
-      await fetch('/api/alerts', {
+      const res = await fetch('/api/alerts', {
         method: 'POST',
         headers: buildApiHeaders({
           'Content-Type': 'application/json',
         }),
         body: JSON.stringify({ action: 'mark_read', id }),
       });
+      if (!res.ok) throw new Error(`Failed to mark alerts as read (${res.status})`);
+      setError(null);
       await fetchAlerts();
     } catch (err) {
       console.error('Error marking alerts as read:', err);
+      setError(err instanceof Error ? err.message : 'Gagal menandai notifikasi');
     }
   }, [fetchAlerts]);
 
@@ -61,7 +67,7 @@ export function useAlerts() {
     options: CreateAlertOptions = {},
   ) => {
     try {
-      await fetch('/api/alerts', {
+      const res = await fetch('/api/alerts', {
         method: 'POST',
         headers: buildApiHeaders({
           'Content-Type': 'application/json',
@@ -76,9 +82,12 @@ export function useAlerts() {
           metadata: options.metadata ?? null,
         }),
       });
+      if (!res.ok) throw new Error(`Failed to create alert (${res.status})`);
+      setError(null);
       await fetchAlerts();
     } catch (err) {
       console.error('Error creating alerts:', err);
+      setError(err instanceof Error ? err.message : 'Gagal membuat notifikasi');
     }
   }, [fetchAlerts]);
 
@@ -88,5 +97,5 @@ export function useAlerts() {
     return () => window.clearInterval(interval);
   }, [fetchAlerts]);
 
-  return { alerts, unreadCount, loading, fetchAlerts, markAsRead, createAlert };
+  return { alerts, unreadCount, loading, error, fetchAlerts, markAsRead, createAlert };
 }

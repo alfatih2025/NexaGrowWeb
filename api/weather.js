@@ -135,11 +135,14 @@ export default async function handler(req, res) {
     weatherData.location_code = normalizedCode;
 
     if (supabase) {
-      await supabase.from('activity_logs').insert({
+      const { error: activityLogError } = await supabase.from('activity_logs').insert({
         type: 'weather',
         message: `Weather data fetched for ${weatherData.location}`,
         details: weatherData.current,
-      }).catch(() => {});
+      });
+      if (activityLogError) {
+        console.error('Weather API: gagal menulis activity_logs:', activityLogError);
+      }
     }
 
     return res.status(200).json(weatherData);
