@@ -1,10 +1,10 @@
 # NexaGrow - Smart Farm IoT Dashboard
 
-A modern web application for ESP32 IoT agriculture monitoring and control.
+Platform smart agriculture berbasis IoT yang diperkuat AI untuk monitoring, analisis, dan otomatisasi pertanian secara real-time.
 
 ## Features
 
-- **Real-time Monitoring**: Live sensor data from ESP32 (temperature, humidity, pH, turbidity, soil moisture)
+- **Real-time Monitoring**: Live sensor data from Arduino (temperature, humidity, soil moisture)
 - **Weather Integration**: BMKG API integration for weather forecasts
 - **AI Chatbot**: Smart Farm Assistant powered by OpenRouter AI
 - **Device Control**: Remote control of pumps and feeders
