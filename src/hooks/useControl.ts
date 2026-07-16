@@ -74,35 +74,40 @@ function resolveControlCommand(action: string, duration?: number, data?: Record<
       const autoModeValue = typeof data?.auto_mode === 'string'
         ? (String(data?.auto_mode).trim().toLowerCase() === 'manual' ? 0 : 1)
         : Boolean(data?.auto_mode) ? 1 : 0;
-      // ESP32 firmware expects *full* key names (see firmware/esp32.cpp::tanganiPerintahSettings)
-      // - enable schedule: watering_enabled
-      // - thresholds: soil_threshold_low/high/critical, temp_threshold_low/high, humidity_threshold_low/high
-      // - schedule: watering_time, watering_duration
-      // - mode: auto_mode, plant_phase
-
       const enabled = Boolean(data?.watering_enabled ?? data?.schedule_enabled ?? true);
+      const location = String(data?.location ?? '').trim();
+      const weatherLocation = String(data?.weather_location ?? data?.location ?? '').trim();
+      const weatherCondition = String(data?.weather_condition ?? '').trim();
+      const weatherTemperature = Number(data?.weather_temperature ?? 0);
+      const weatherRainChance = Number(data?.weather_rain_chance ?? data?.rain_chance ?? 0);
+      const wateringTime = String(data?.watering_time ?? '').trim();
+      const wateringDuration = Number(data?.watering_duration ?? 10);
 
       return {
         topic: 'sproutai/settings/cmd',
         payload: JSON.stringify({
-          // mode & phase
           plant_phase: phaseValue === 1 ? 'generatif' : 'vegetatif',
+          pp: phaseValue,
           auto_mode: autoModeValue === 1,
-
-          // locations / report (optional, but safe)
-          location: String(data?.location ?? '').trim(),
-          weather_location: String(data?.weather_location ?? data?.location ?? '').trim(),
-          weather_condition: String(data?.weather_condition ?? '').trim(),
-          weather_temperature: Number(data?.weather_temperature ?? 0),
-          weather_rain_chance: Number(data?.weather_rain_chance ?? 0),
+          am: autoModeValue,
+          location,
+          weather_location: weatherLocation,
+          weather_location_code: weatherLocation,
+          weather_condition: weatherCondition,
+          weather_desc: weatherCondition,
+          weather_temperature: weatherTemperature,
+          weather_temp: weatherTemperature,
+          weather_rain_chance: weatherRainChance,
+          rain: weatherRainChance,
+          rc: weatherRainChance,
           weather_forecast: String(data?.weather_forecast ?? '').trim(),
-          watering_time: String(data?.watering_time ?? '').trim(),
-          watering_duration: Number(data?.watering_duration ?? 10),
-
-          // schedule enable
+          watering_time: wateringTime,
+          wt: wateringTime,
+          watering_duration: wateringDuration,
+          wd: wateringDuration,
           watering_enabled: enabled,
-
-          // thresholds (full names)
+          schedule_enabled: enabled,
+          se: enabled,
           temp_threshold_low: Number(data?.temp_threshold_low ?? 0),
           temp_threshold_high: Number(data?.temp_threshold_high ?? 0),
           humidity_threshold_low: Number(data?.humidity_threshold_low ?? 0),
@@ -110,12 +115,9 @@ function resolveControlCommand(action: string, duration?: number, data?: Record<
           soil_threshold_low: Number(data?.soil_threshold_low ?? 0),
           soil_threshold_high: Number(data?.soil_threshold_high ?? 0),
           soil_threshold_critical: Number(data?.soil_threshold_critical ?? 0),
-
-          // report
+          tk: Number(data?.soil_threshold_critical ?? 0),
           auto_report: Boolean(data?.auto_report ?? true),
           report_time: String(data?.report_time ?? '08:00').trim(),
-
-          // user (optional)
           user_name: String(data?.user_name ?? '').trim(),
           user_email: String(data?.user_email ?? '').trim(),
         }),
@@ -124,12 +126,18 @@ function resolveControlCommand(action: string, duration?: number, data?: Record<
     case 'schedule_set':
       {
         const enabled = Boolean(data?.schedule_enabled ?? data?.watering_enabled ?? true);
+        const wateringTime = String(data?.watering_time ?? '').trim();
+        const wateringDuration = Number(data?.watering_duration ?? 10);
         return {
           topic: 'sproutai/schedule/cmd',
           payload: JSON.stringify({
             schedule_enabled: enabled,
-            watering_time: String(data?.watering_time ?? '').trim(),
-            watering_duration: Number(data?.watering_duration ?? 10),
+            watering_enabled: enabled,
+            se: enabled,
+            watering_time: wateringTime,
+            wt: wateringTime,
+            watering_duration: wateringDuration,
+            wd: wateringDuration,
           }),
         };
       }

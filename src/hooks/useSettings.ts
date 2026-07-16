@@ -201,16 +201,22 @@ export function useSettings() {
           body: JSON.stringify(payload),
         });
 
-        if (!res.ok) throw new Error('Failed to update settings');
+        if (!res.ok) {
+          const message = `Failed to update settings (${res.status})`;
+          setError(message);
+          return payload;
+        }
+
         const data = await res.json();
         const normalized = syncLocalSettings(normalizeSettings(data));
         setError(null);
         return normalized;
       } catch (err) {
         // Tetap gunakan payload lokal agar dashboard/cuaca tidak balik ke nilai lama.
+        // Ini penting karena MQTT ke ESP32 tetap harus tetap bisa dikirim meski API gagal.
         const message = err instanceof Error ? err.message : 'Unknown error';
         setError(message);
-        throw new Error(message);
+        return payload;
       } finally {
         setLoading(false);
       }

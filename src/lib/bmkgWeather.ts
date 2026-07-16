@@ -21,7 +21,10 @@ type BmkgResponse = {
   lokasi?: BmkgLocation;
   data?: Array<{
     cuaca?: BmkgForecast[][];
+    forecast?: BmkgForecast[][];
   }>;
+  cuaca?: BmkgForecast[][];
+  forecast?: BmkgForecast[][];
 };
 
 const DEFAULT_WEATHER: WeatherData = {
@@ -42,10 +45,11 @@ function toNumber(value: number | string | undefined, fallback: number) {
 }
 
 function getRainChance(weatherCode: number | string | undefined) {
-  const normalized = String(weatherCode ?? '').trim();
-  if (normalized === '0') return 0;
-  if (['1', '2', '3'].includes(normalized)) return 10;
-  if (['4', '5', '6', '7'].includes(normalized)) return 35;
+  const normalized = String(weatherCode ?? '').trim().toLowerCase();
+  if (normalized === '0' || normalized === 'nol') return 0;
+  if (['1', '2', '3', 'ringan', 'cerah'].includes(normalized)) return 10;
+  if (['4', '5', '6', '7', 'berawan', 'hujan ringan'].includes(normalized)) return 35;
+  if (normalized.includes('hujan')) return 70;
   return 60;
 }
 
@@ -60,8 +64,26 @@ function formatLocation(location?: BmkgLocation, fallbackLocation = DEFAULT_WEAT
   return parts.length > 0 ? parts.join(', ') : fallbackLocation;
 }
 
+function extractForecastRows(data: BmkgResponse) {
+  const candidates = [
+    data?.data?.[0]?.cuaca,
+    data?.data?.[0]?.forecast,
+    data?.cuaca,
+    data?.forecast,
+  ].filter(Boolean);
+
+  const flattened = candidates.flatMap((entry) => {
+    if (Array.isArray(entry)) {
+      return entry.flatMap((item) => (Array.isArray(item) ? item : [item]));
+    }
+    return [];
+  });
+
+  return flattened.filter((item): item is NonNullable<BmkgForecast> => Boolean(item && typeof item === 'object'));
+}
+
 export function transformBmkgWeather(data: BmkgResponse, fallbackLocation = DEFAULT_WEATHER.location): WeatherData {
-  const forecasts = data.data?.[0]?.cuaca?.flat() ?? [];
+  const forecasts = extractForecastRows(data);
   const [currentForecast, ...nextForecasts] = forecasts;
 
   if (!currentForecast) {

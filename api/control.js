@@ -39,18 +39,32 @@ const COMMAND_MAP = {
       ? String(data?.auto_mode).trim().toLowerCase() !== 'manual'
       : Boolean(data?.auto_mode ?? true);
     const enabled = Boolean(data?.watering_enabled ?? data?.schedule_enabled ?? true);
+    const location = String(data?.location || '').trim();
+    const weatherLocation = String(data?.weather_location || data?.location || '').trim();
+    const weatherCondition = String(data?.weather_condition || '').trim();
+    const weatherRainChance = Number(data?.weather_rain_chance ?? data?.rain_chance ?? 0);
+    const weatherTemperature = Number(data?.weather_temperature ?? data?.temperature ?? 0);
+    const wateringTime = String(data?.watering_time || '').trim();
+    const wateringDuration = Number(data?.watering_duration ?? 10);
 
     return {
       topic: 'sproutai/settings/cmd',
       payload: JSON.stringify({
         command_id: commandId,
         plant_phase: phaseValue,
+        pp: phaseValue === 'generatif' ? 1 : 0,
         auto_mode: autoModeValue,
-        location: String(data?.location || '').trim(),
-        weather_location: String(data?.weather_location || data?.location || '').trim(),
-        weather_condition: String(data?.weather_condition || '').trim(),
-        weather_rain_chance: Number(data?.weather_rain_chance ?? data?.rain_chance ?? 0),
-        weather_temperature: Number(data?.weather_temperature ?? data?.temperature ?? 0),
+        am: autoModeValue ? 1 : 0,
+        location,
+        weather_location: weatherLocation,
+        weather_location_code: weatherLocation,
+        weather_condition: weatherCondition,
+        weather_desc: weatherCondition,
+        weather_rain_chance: weatherRainChance,
+        rain: weatherRainChance,
+        rc: weatherRainChance,
+        weather_temperature: weatherTemperature,
+        weather_temp: weatherTemperature,
         temp_threshold_low: Number(data?.temp_threshold_low ?? 0),
         temp_threshold_high: Number(data?.temp_threshold_high ?? 0),
         humidity_threshold_low: Number(data?.humidity_threshold_low ?? 0),
@@ -58,9 +72,14 @@ const COMMAND_MAP = {
         soil_threshold_low: Number(data?.soil_threshold_low ?? 0),
         soil_threshold_high: Number(data?.soil_threshold_high ?? 0),
         soil_threshold_critical: Number(data?.soil_threshold_critical ?? 0),
-        watering_time: String(data?.watering_time || '').trim(),
-        watering_duration: Number(data?.watering_duration ?? 10),
+        tk: Number(data?.soil_threshold_critical ?? 0),
+        watering_time: wateringTime,
+        wt: wateringTime,
+        watering_duration: wateringDuration,
+        wd: wateringDuration,
         watering_enabled: enabled,
+        schedule_enabled: enabled,
+        se: enabled,
         auto_report: Boolean(data?.auto_report ?? true),
         report_time: String(data?.report_time ?? '08:00').trim(),
         user_name: String(data?.user_name || '').trim(),
@@ -73,8 +92,12 @@ const COMMAND_MAP = {
     payload: JSON.stringify({
       command_id: commandId,
       watering_time: String(data?.watering_time || '').trim(),
+      wt: String(data?.watering_time || '').trim(),
       watering_duration: Number(data?.watering_duration || 10),
+      wd: Number(data?.watering_duration || 10),
       schedule_enabled: Boolean(data?.schedule_enabled ?? data?.watering_enabled ?? true),
+      watering_enabled: Boolean(data?.schedule_enabled ?? data?.watering_enabled ?? true),
+      se: Boolean(data?.schedule_enabled ?? data?.watering_enabled ?? true),
     }),
   }),
   wifi_update: (data, commandId) => ({

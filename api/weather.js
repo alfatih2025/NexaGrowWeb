@@ -71,10 +71,11 @@ function toNumber(value, fallback) {
 }
 
 function getRainChance(weatherCode) {
-  const normalized = String(weatherCode ?? '').trim();
-  if (normalized === '0') return 0;
-  if (['1', '2', '3'].includes(normalized)) return 10;
-  if (['4', '5', '6', '7'].includes(normalized)) return 35;
+  const normalized = String(weatherCode ?? '').trim().toLowerCase();
+  if (normalized === '0' || normalized === 'nol') return 0;
+  if (['1', '2', '3', 'ringan', 'cerah'].includes(normalized)) return 10;
+  if (['4', '5', '6', '7', 'berawan', 'hujan ringan'].includes(normalized)) return 35;
+  if (normalized.includes('hujan')) return 70;
   return 60;
 }
 
@@ -88,8 +89,24 @@ function formatLocation(location, fallbackLocation = DEFAULT_WEATHER.location) {
   return parts.length > 0 ? parts.join(', ') : fallbackLocation;
 }
 
+function extractForecastRows(data) {
+  const candidates = [
+    data?.data?.[0]?.cuaca,
+    data?.data?.[0]?.forecast,
+    data?.cuaca,
+    data?.forecast,
+  ].filter(Boolean);
+
+  return candidates.flatMap((entry) => {
+    if (Array.isArray(entry)) {
+      return entry.flatMap((item) => (Array.isArray(item) ? item : [item]));
+    }
+    return [];
+  }).filter(Boolean);
+}
+
 function transformBmkgWeather(data, fallbackLocation = DEFAULT_WEATHER.location) {
-  const forecasts = data?.data?.[0]?.cuaca?.flat() || [];
+  const forecasts = extractForecastRows(data);
   const [currentForecast, ...nextForecasts] = forecasts;
   if (!currentForecast) {
     return {
@@ -100,7 +117,7 @@ function transformBmkgWeather(data, fallbackLocation = DEFAULT_WEATHER.location)
 
   return {
     location_code: resolveLocationCode(data?.lokasi?.adm4 || data?.location_code || data?.adm4 || DEFAULT_LOCATION_CODE),
-    location: formatLocation(data.lokasi, fallbackLocation),
+    location: formatLocation(data?.lokasi || data?.lokasi_terpilih, fallbackLocation),
     current: {
       temperature: toNumber(currentForecast.t, DEFAULT_WEATHER.current.temperature),
       humidity: toNumber(currentForecast.hu, DEFAULT_WEATHER.current.humidity),
@@ -127,11 +144,26 @@ export default async function handler(req, res) {
   try {
     const locationCode = req.query?.location || req.query?.adm4 || DEFAULT_LOCATION_CODE;
     const normalizedCode = resolveLocationCode(locationCode);
-    const bmkgUrl = resolveBmkgUrl(normalizedCode);
-    const response = await fetch(bmkgUrl);
-    if (!response.ok) throw new Error('Failed to fetch BMKG weather');
-    const bmkgData = await response.json();
-    const weatherData = transformBmkgWeather(bmkgData, resolveLocationLabel(normalizedCode));
+    const bmkgUrls = [resolveBmkgUrl(normalizedCode), `https://api.bmkg.go.id/publik/prakiraan-cuaca?adm4=${encodeURIComponent(normalizedCode)}`];
+    let bmkgData = null;
+
+    for (const bmkgUrl of bmkgUrls) {
+      try {
+        const response = await fetch(bmkgUrl, {
+          headers: {
+            Accept: 'application/json',
+            'User-Agent': 'Mozilla/5.0',
+          },
+        });
+        if (!response.ok) continue;
+        bmkgData = await response.json();
+        break;
+      } catch {
+        // try next fallback URL
+      }
+    }
+
+    const weatherData = transformBmkgWeather(bmkgData || {}, resolveLocationLabel(normalizedCode));
     weatherData.location_code = normalizedCode;
 
     if (supabase) {

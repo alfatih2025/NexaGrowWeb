@@ -138,7 +138,10 @@ export default async function handler(req, res) {
       const updates = req.body || {};
       const payload = normalizeSettings(updates);
 
-      if (!supabase) return res.status(503).json({ error: 'Database not configured' });
+      if (!supabase) {
+        console.warn('[api/settings] Supabase not configured; returning normalized payload locally');
+        return res.status(200).json(payload);
+      }
 
       const { data, error } = await supabase
         .from('settings')
@@ -154,7 +157,7 @@ export default async function handler(req, res) {
         details: updates,
       }).catch(() => {});
 
-      return res.status(200).json(data);
+      return res.status(200).json(data || payload);
     }
 
     res.status(405).json({ error: 'Method not allowed' });
