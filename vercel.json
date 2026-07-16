@@ -1,7 +1,7 @@
 {
   "env": {
-    "SUPABASE_URL": "https://uhqpttkysypnknafyarw.supabase.co",
-    "SUPABASE_ANON_KEY": "sb_publishable_voGHASEfyiTdou_vsKFCDg_BYbQA59b",
+    "SUPABASE_URL": "",
+    "SUPABASE_ANON_KEY": "",
     "SUPABASE_SERVICE_ROLE_KEY": "",
     "API_AUTH_TOKEN": "",
     "VITE_SUPABASE_URL": "",

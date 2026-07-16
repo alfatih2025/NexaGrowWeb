@@ -1,12 +1,8 @@
 import mqtt, { type MqttClient } from 'mqtt';
 
-const DEFAULT_BROKER_URL = 'wss://083ac0ac0dbf4e78877e4a5cd24d426d.s1.eu.hivemq.cloud:8884/mqtt';
-const DEFAULT_MQTT_USERNAME = 'NexaGrow';
-const DEFAULT_MQTT_PASSWORD = 'Nexa12345678';
-
-const BROKER_URL = (import.meta.env.VITE_BROKER_URL as string | undefined)?.trim() || DEFAULT_BROKER_URL;
-const MQTT_USERNAME = (import.meta.env.VITE_MQTT_USERNAME as string | undefined)?.trim() || DEFAULT_MQTT_USERNAME;
-const MQTT_PASSWORD = (import.meta.env.VITE_MQTT_PASSWORD as string | undefined)?.trim() || DEFAULT_MQTT_PASSWORD;
+const BROKER_URL = (import.meta.env.VITE_BROKER_URL as string | undefined)?.trim() || '';
+const MQTT_USERNAME = (import.meta.env.VITE_MQTT_USERNAME as string | undefined)?.trim() || '';
+const MQTT_PASSWORD = (import.meta.env.VITE_MQTT_PASSWORD as string | undefined)?.trim() || '';
 
 const WEB_STATUS_TOPIC = 'sproutai/web/status';
 const DEVICE_STATUS_TOPIC = 'sproutai/esp32/status';
