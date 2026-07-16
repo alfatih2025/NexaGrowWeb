@@ -1,12 +1,6 @@
-const DEFAULT_HEADER_NAMES = ['authorization', 'x-api-key'];
+import { readEnv } from './_env.js';
 
-function readEnv(...names) {
-  for (const name of names) {
-    const value = process.env[name];
-    if (typeof value === 'string' && value.trim()) return value.trim();
-  }
-  return '';
-}
+const DEFAULT_HEADER_NAMES = ['authorization', 'x-api-key'];
 
 function getExpectedToken() {
   return readEnv('API_AUTH_TOKEN', 'VITE_API_AUTH_TOKEN', 'NEXT_PUBLIC_API_AUTH_TOKEN');

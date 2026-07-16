@@ -1,5 +1,6 @@
 import { requireApiAuth, authError } from '../src/lib/apiHelpers/_auth.js';
 import supabase from '../src/lib/apiHelpers/_supabase.js';
+import { applyCors, getErrorMessage } from '../src/lib/apiHelpers/_http.js';
 
 const OPENROUTER_API_KEY =
   process.env.OPENROUTER_API_KEY || process.env.VITE_OPENROUTER_API_KEY;
@@ -138,10 +139,7 @@ function generateDailyReport(latestSensor) {
 }
 
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  if (req.method === 'OPTIONS') return res.status(204).end();
+  if (applyCors(req, res, { methods: 'GET, POST, OPTIONS', headers: 'Content-Type, Authorization' })) return;
 
   if (!requireApiAuth(req, res)) return;
 
@@ -255,7 +253,7 @@ aiResponse = `Maaf, saya sedang kesulitan terhubung ke AI Online. ${error instan
     return res.status(405).json({ error: 'Method not allowed' });
   } catch (error) {
     return res.status(500).json({
-      error: error instanceof Error ? error.message : 'Unknown chat error',
+      error: getErrorMessage(error, 'Unknown chat error'),
     });
   }
 }
