@@ -21,6 +21,15 @@ export function applyCors(req, res, { methods = DEFAULT_ALLOW_METHODS, headers =
   return false;
 }
 
+/**
+ * Extracts a human-readable message from a thrown value. Handles Error
+ * instances as well as plain objects that carry a string `message` (e.g.
+ * Supabase/PostgREST errors), falling back to `fallback` otherwise.
+ */
 export function getErrorMessage(err, fallback = 'Unknown error') {
-  return err instanceof Error ? err.message : fallback;
+  if (err instanceof Error && err.message) return err.message;
+  if (err && typeof err === 'object' && typeof err.message === 'string' && err.message) {
+    return err.message;
+  }
+  return fallback;
 }
