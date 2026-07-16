@@ -97,12 +97,16 @@ async function publishToMqttBroker(topic, payload) {
   const password = process.env.MQTT_PASSWORD || process.env.VITE_MQTT_PASSWORD || '';
   const defaultPort = Number(process.env.MQTT_PORT || 1883);
 
+  // Verifikasi sertifikat TLS aktif secara default. Hanya nonaktifkan lewat
+  // MQTT_INSECURE_TLS=true jika broker memakai sertifikat self-signed dan risikonya dipahami.
+  const rejectUnauthorized = String(process.env.MQTT_INSECURE_TLS || '').trim().toLowerCase() !== 'true';
+
   // Jika broker menggunakan protokol wss (WebSocket Secure), pastikan opsi konfigurasi path '/mqtt' disesuaikan
   const options = {
     username: username,
     password: password,
     connectTimeout: 7000,
-    rejectUnauthorized: false, // Menghindari kegagalan TLS handshake di serverless cloud
+    rejectUnauthorized,
   };
 
   // Jika URL broker belum menyertakan port spesifik, gunakan defaultPort
