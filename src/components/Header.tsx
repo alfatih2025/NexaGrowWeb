@@ -42,6 +42,8 @@ export function Header({ mqttStatus, currentPage, health }: HeaderProps) {
   }, [open, fetchAlerts]);
 
   const title = pageTitles[currentPage] || 'Dashboard';
+  const hasCriticalHealth = health?.healthState === 'kritis';
+  const displayCount = unreadCount + (hasCriticalHealth ? 1 : 0);
 
   return (
     <header className="sticky top-0 z-30 border-b border-slate-200/70 bg-white/90 backdrop-blur-xl">
@@ -83,13 +85,13 @@ export function Header({ mqttStatus, currentPage, health }: HeaderProps) {
               title="Notifikasi"
             >
               <Bell size={18} />
-              {unreadCount > 0 && (
+              {displayCount > 0 && (
                 <motion.span
                   initial={{ scale: 0 }}
                   animate={{ scale: 1 }}
                   className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[11px] font-bold text-white"
                 >
-                  {unreadCount > 9 ? '9+' : unreadCount}
+                  {displayCount > 9 ? '9+' : displayCount}
                 </motion.span>
               )}
               <ChevronDown size={14} className={`text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
@@ -106,7 +108,7 @@ export function Header({ mqttStatus, currentPage, health }: HeaderProps) {
                   <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
                     <div>
                       <p className="text-sm font-semibold text-slate-800">Histori Notifikasi</p>
-                      <p className="text-xs text-slate-500">{unreadCount} belum dibaca</p>
+                      <p className="text-xs text-slate-500">{displayCount} belum dibaca</p>
                     </div>
                     <button
                       onClick={() => markAsRead()}
@@ -123,7 +125,7 @@ export function Header({ mqttStatus, currentPage, health }: HeaderProps) {
                         <div className="flex items-start gap-2">
                           <ShieldAlert className="mt-0.5 h-4 w-4 flex-shrink-0" />
                           <div>
-                            <p className="text-sm font-semibold">Status kritis terdeteksi</p>
+                            <p className="text-sm font-semibold">Peringatan: Kondisi Tanaman Kritis!</p>
                             <p className="text-xs opacity-90">{health.healthDetail}</p>
                           </div>
                         </div>
