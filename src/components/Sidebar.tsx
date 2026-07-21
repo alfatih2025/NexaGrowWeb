@@ -127,7 +127,7 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
               <span className="font-semibold">NexaGrow AI</span>
             </div>
             <p className="text-xs leading-relaxed text-slate-300/80">
-              Monitoring sensor, jadwal penyiraman, dan analisis tanaman terhubung langsung ke ESP32 serta Arduino Nano.
+              Monitoring sensor, jadwal penyiraman, dan analisis tanaman.
             </p>
           </div>
         </div>

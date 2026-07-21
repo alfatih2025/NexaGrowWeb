@@ -184,6 +184,16 @@ let sensorHistory: MqttSensorSnapshot[] = [];
 let reconnectTimer: number | null = null;
 
 function emit() {
+  if (snapshot.espOnline && snapshot.espLastSeenAt) {
+    const elapsed = Date.now() - new Date(snapshot.espLastSeenAt).getTime();
+    if (elapsed > ESP_ONLINE_TIMEOUT_MS) {
+      snapshot = { ...snapshot, espOnline: false };
+      if (sensorSnapshot) {
+        sensorSnapshot = { ...sensorSnapshot, pump_status: false, led_status: false };
+      }
+    }
+  }
+
   const espOnline = snapshot.espOnline;
   const systemOnline = snapshot.browserOnline && snapshot.mqttConnected && espOnline;
   const reasonParts: string[] = [];
@@ -482,6 +492,11 @@ function updateFromTopic(topic: string, payload: string) {
   if (topic === SYSTEM_STATUS_TOPIC || topic === DEVICE_STATUS_TOPIC) {
     const parsedStatus = parseStatusValue(trimmed);
     const isOnline = parsedStatus ?? true;
+    
+    if (!isOnline && sensorSnapshot) {
+      sensorSnapshot = { ...sensorSnapshot, pump_status: false, led_status: false };
+    }
+    
     setSnapshot({
       espOnline: isOnline,
       espLastSeenAt: isOnline ? now : null,
