@@ -42,8 +42,6 @@ export function Header({ mqttStatus, currentPage, health }: HeaderProps) {
   }, [open, fetchAlerts]);
 
   const title = pageTitles[currentPage] || 'Dashboard';
-  const hasCriticalHealth = health?.healthState === 'kritis';
-  const displayCount = unreadCount + (hasCriticalHealth ? 1 : 0);
 
   return (
     <header className="sticky top-0 z-30 border-b border-slate-200/70 bg-white/90 backdrop-blur-xl">
@@ -85,13 +83,13 @@ export function Header({ mqttStatus, currentPage, health }: HeaderProps) {
               title="Notifikasi"
             >
               <Bell size={18} />
-              {displayCount > 0 && (
+              {unreadCount > 0 && (
                 <motion.span
                   initial={{ scale: 0 }}
                   animate={{ scale: 1 }}
                   className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[11px] font-bold text-white"
                 >
-                  {displayCount > 9 ? '9+' : displayCount}
+                  {unreadCount > 9 ? '9+' : unreadCount}
                 </motion.span>
               )}
               <ChevronDown size={14} className={`text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
@@ -108,7 +106,7 @@ export function Header({ mqttStatus, currentPage, health }: HeaderProps) {
                   <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
                     <div>
                       <p className="text-sm font-semibold text-slate-800">Histori Notifikasi</p>
-                      <p className="text-xs text-slate-500">{displayCount} belum dibaca</p>
+                      <p className="text-xs text-slate-500">{unreadCount} belum dibaca</p>
                     </div>
                     <button
                       onClick={() => markAsRead()}
@@ -120,18 +118,6 @@ export function Header({ mqttStatus, currentPage, health }: HeaderProps) {
                   </div>
 
                   <div className="max-h-[22rem] space-y-2 overflow-y-auto p-3">
-                    {health?.healthState === 'kritis' && (
-                      <div className="rounded-2xl border border-red-200 bg-red-50 p-3 text-red-800 shadow-sm dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-200">
-                        <div className="flex items-start gap-2">
-                          <ShieldAlert className="mt-0.5 h-4 w-4 flex-shrink-0" />
-                          <div>
-                            <p className="text-sm font-semibold">Peringatan: Kondisi Tanaman Kritis!</p>
-                            <p className="text-xs opacity-90">{health.healthDetail}</p>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
                     {alerts.length === 0 && (
                       <div className="rounded-2xl border border-dashed border-slate-200 p-5 text-center text-sm text-slate-500">
                         Belum ada notifikasi.
