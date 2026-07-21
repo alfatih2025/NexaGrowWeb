@@ -1,12 +1,14 @@
-import { Bell, Wifi, WifiOff, ChevronDown, CheckCheck } from 'lucide-react';
+import { Bell, Wifi, WifiOff, ChevronDown, CheckCheck, ShieldAlert } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useEffect, useRef, useState } from 'react';
 import { MqttStatusSnapshot } from '../hooks/useMqttStatus';
 import { useAlerts } from '../hooks/useAlerts';
+import { PlantHealthSummary } from '../lib/plantPhase';
 
 interface HeaderProps {
   mqttStatus: MqttStatusSnapshot;
   currentPage: string;
+  health?: PlantHealthSummary | null;
 }
 
 const pageTitles: Record<string, string> = {
@@ -20,7 +22,7 @@ const pageTitles: Record<string, string> = {
   about: 'About / Tentang NexaGrow',
 };
 
-export function Header({ mqttStatus, currentPage }: HeaderProps) {
+export function Header({ mqttStatus, currentPage, health }: HeaderProps) {
   const { alerts, unreadCount, markAsRead, fetchAlerts } = useAlerts();
   const [open, setOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -116,6 +118,18 @@ export function Header({ mqttStatus, currentPage }: HeaderProps) {
                   </div>
 
                   <div className="max-h-[22rem] space-y-2 overflow-y-auto p-3">
+                    {health?.healthState === 'kritis' && (
+                      <div className="rounded-2xl border border-red-200 bg-red-50 p-3 text-red-800 shadow-sm dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-200">
+                        <div className="flex items-start gap-2">
+                          <ShieldAlert className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                          <div>
+                            <p className="text-sm font-semibold">Status kritis terdeteksi</p>
+                            <p className="text-xs opacity-90">{health.healthDetail}</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
                     {alerts.length === 0 && (
                       <div className="rounded-2xl border border-dashed border-slate-200 p-5 text-center text-sm text-slate-500">
                         Belum ada notifikasi.

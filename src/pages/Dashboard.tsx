@@ -93,17 +93,6 @@ export function Dashboard({ sensorData, settings, weatherData, health }: Dashboa
         </div>
       </div>
 
-      {health?.healthState === 'kritis' && (
-        <div className="rounded-3xl border border-red-200 bg-red-50 p-4 text-red-800 shadow-sm dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-200">
-          <div className="flex items-start gap-3">
-            <ShieldAlert className="mt-0.5 h-5 w-5 flex-shrink-0" />
-            <div>
-              <p className="font-semibold">Status kritis terdeteksi</p>
-              <p className="text-sm opacity-90">{health.healthDetail}</p>
-            </div>
-          </div>
-        </div>
-      )}
 
       <div className="grid grid-cols-2 gap-3 auto-rows-min">
         <SensorCard

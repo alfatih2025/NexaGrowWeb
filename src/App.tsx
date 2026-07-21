@@ -256,7 +256,7 @@ function App() {
         <Sidebar currentPage={currentPage} onPageChange={handlePageChange} />
 
         <div className="flex min-h-screen flex-1 flex-col">
-          <Header mqttStatus={mqttStatus} currentPage={currentPage} />
+          <Header mqttStatus={mqttStatus} currentPage={currentPage} health={health} />
 
           <main className="flex-1 overflow-auto px-4 py-4 sm:px-6 sm:py-6">
             <motion.div
