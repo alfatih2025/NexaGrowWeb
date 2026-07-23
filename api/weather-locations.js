@@ -59,7 +59,7 @@ function resolveSemarangDistrict(code) {
 
 function parseLocationLinks(html, districtCode, districtLabel) {
   const items = new Map();
-  const pattern = /<a[^>]+href="[^"]*\/cuaca\/prakiraan-cuaca\/(\d{2}(?:\.\d{2}){1,3})[^"]*"[^>]*>(.*?)<\/a>/gi;
+  const pattern = /<a[^>]+href="[^"]*\/cuaca\/prakiraan-cuaca\/([\d.]+)[^"]*"[^>]*>(.*?)<\/a>/gi;
 
   let match;
   while ((match = pattern.exec(html)) !== null) {
@@ -71,7 +71,7 @@ function parseLocationLinks(html, districtCode, districtLabel) {
       .trim();
 
     if (!code.startsWith(`${districtCode}.`)) continue;
-    if (!/^\d{2}(?:\.\d{2}){3}$/.test(code)) continue;
+    if (!/^\d{2}(?:\.\d{2}){1,2}(?:\.\d{1,4})?$/.test(code)) continue;
     if (!rawLabel || /prakiraan|cuaca|bmkg|kecamatan/i.test(rawLabel)) continue;
 
     items.set(code, {

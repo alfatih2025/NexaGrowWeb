@@ -122,7 +122,10 @@ function resolveSelection(next: Partial<WeatherSelection>, previous: WeatherSele
   if (nextVillages.length > 0) {
     locationCode = nextVillages.some((item) => item.code === locationCode) ? locationCode : nextVillages[0].code;
   } else {
-    locationCode = pickFirstLocationCode(category, province, city, district);
+    const defaultDistrictCode = pickFirstLocationCode(category, province, city, district);
+    const districtPrefix = defaultDistrictCode.split('.').slice(0, 3).join('.');
+    const requestedPrefix = locationCode.split('.').slice(0, 3).join('.');
+    locationCode = districtPrefix === requestedPrefix ? locationCode : defaultDistrictCode;
   }
 
   return { category, province, city, district, locationCode };
