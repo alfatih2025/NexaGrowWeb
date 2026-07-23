@@ -142,7 +142,16 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(204).end();
 
   try {
-    const locationCode = req.query?.location || req.query?.adm4 || DEFAULT_LOCATION_CODE;
+    const urlStr = req.url || '';
+    let queryLocation = req.query?.location || req.query?.adm4;
+    
+    // Fallback manual URL parsing if Vercel rewrites stripped req.query
+    if (!queryLocation && urlStr.includes('?')) {
+      const searchParams = new URLSearchParams(urlStr.split('?')[1]);
+      queryLocation = searchParams.get('location') || searchParams.get('adm4');
+    }
+
+    const locationCode = queryLocation || DEFAULT_LOCATION_CODE;
     const normalizedCode = resolveLocationCode(locationCode);
     const bmkgUrls = [resolveBmkgUrl(normalizedCode), `https://api.bmkg.go.id/publik/prakiraan-cuaca?adm4=${encodeURIComponent(normalizedCode)}`];
     let bmkgData = null;
@@ -163,7 +172,16 @@ export default async function handler(req, res) {
       }
     }
 
-    const weatherData = transformBmkgWeather(bmkgData || {}, resolveLocationLabel(normalizedCode));
+    if (!bmkgData) {
+      console.error(`Failed to fetch BMKG data for ${normalizedCode}`);
+      return res.status(502).json({
+        error: 'BMKG API unavailable',
+        location_code: normalizedCode,
+        location: resolveLocationLabel(normalizedCode)
+      });
+    }
+
+    const weatherData = transformBmkgWeather(bmkgData, resolveLocationLabel(normalizedCode));
     weatherData.location_code = normalizedCode;
 
     if (supabase) {
