@@ -152,15 +152,12 @@ export function ControlPanel({ sensorData }: ControlPanelProps) {
               <Settings2 size={24} />
             </div>
             <div>
-              <p className="text-sm text-slate-500 dark:text-slate-400">Status Otomatis (Arduino)</p>
+              <p className="text-sm text-slate-500 dark:text-slate-400">Status Otomatis</p>
               <p className={`text-lg font-bold ${sensorData?.pump_status ? 'text-emerald-600 dark:text-emerald-300' : 'text-slate-700 dark:text-slate-100'}`}>
                 {sensorData?.pump_status ? 'POMPA MENYALA' : 'POMPA MATI'}
               </p>
             </div>
           </div>
-          <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
-            Data ini menunjukkan status aktual pompa yang dikontrol langsung oleh Arduino.
-          </p>
         </div>
       </div>
 
@@ -202,7 +199,7 @@ export function ControlPanel({ sensorData }: ControlPanelProps) {
             />
           </div>
           <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
-            Saat kelembapan tanah rendah, ESP32 akan menyalakan pompa secara mandiri.
+            Saat di set, pompa akan menyala selama 10 detik lalu otomatis mati.
           </p>
         </div>
       </div>

@@ -211,9 +211,18 @@ export function WeatherPage({ locationCode, settings, updateSettings }: WeatherP
     if (selection.category !== 'semarang') return;
     const options = bmkgVillages.length > 0 ? bmkgVillages : localVillageOptions;
     if (options.length === 0) return;
+    // Already in the list — nothing to do
     if (options.some((item) => item.code === selection.locationCode)) return;
+    // If the current code belongs to the same district (same prefix up to
+    // the kecamatan segment, e.g. "33.74.07"), keep the user's explicit
+    // choice even when BMKG uses a different village code for the same area.
+    const currentPrefix = selection.locationCode.split('.').slice(0, 3).join('.');
+    const districtItem = getWeatherLocationItemByPath(selection.category, selection.province, selection.city, selection.district);
+    const expectedPrefix = districtItem?.code?.split('.').slice(0, 3).join('.') || currentPrefix;
+    if (currentPrefix === expectedPrefix) return;
+    // Code is from a different district entirely — snap to the first option
     setSelection((prev) => ({ ...prev, locationCode: options[0].code }));
-  }, [bmkgVillages, localVillageOptions, selection.category, selection.locationCode]);
+  }, [bmkgVillages, localVillageOptions, selection.category, selection.locationCode, selection.province, selection.city, selection.district]);
 
   const weatherCode = selection.locationCode;
   const { data, loading, error } = useWeather(weatherCode);
