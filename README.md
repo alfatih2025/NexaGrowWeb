@@ -1,7 +1,29 @@
-# NexaGrow - Smart Farm IoT Dashboard
+<h1 align="center">
+🌱 NexaGrow
+</h1>
 
-Platform smart agriculture berbasis IoT yang diperkuat AI untuk monitoring, analisis, dan otomatisasi pertanian secara real-time.
+<p align="center">
+An Intelligent IoT Platform for Smart Irrigation, Real-Time Environmental Monitoring, and AI-Powered Plant Management
+</p>
 
+<p align="center">
+
+<img src="https://img.shields.io/github/license/alfatih2025/NexaGrowWeb">
+<img src="https://img.shields.io/github/stars/alfatih2025/NexaGrowWeb">
+<img src="https://img.shields.io/github/forks/alfatih2025/NexaGrowWeb">
+<img src="https://img.shields.io/github/issues/alfatih2025/NexaGrowWeb">
+
+<img src="https://img.shields.io/badge/React-19-blue?logo=react">
+<img src="https://img.shields.io/badge/TypeScript-5-blue?logo=typescript">
+<img src="https://img.shields.io/badge/Vite-7-purple?logo=vite">
+<img src="https://img.shields.io/badge/Supabase-Database-green?logo=supabase">
+<img src="https://img.shields.io/badge/MQTT-HiveMQ-orange">
+
+</p>
+
+---
+
+> **NexaGrow** is an intelligent agriculture platform that combines IoT, Embedded Systems, Cloud Computing, Artificial Intelligence, and Modern Web Technologies to monitor plant conditions, automate irrigation, and support precision farming through real-time analytics.
 ## Features
 
 - **Real-time Monitoring**: Live sensor data from Arduino (temperature, humidity, soil moisture)
