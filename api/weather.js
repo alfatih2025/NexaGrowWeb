@@ -90,11 +90,12 @@ function formatLocation(location, fallbackLocation = DEFAULT_WEATHER.location) {
 }
 
 function extractForecastRows(data) {
+  const root = Array.isArray(data) ? data[0] : data;
   const candidates = [
-    data?.data?.[0]?.cuaca,
-    data?.data?.[0]?.forecast,
-    data?.cuaca,
-    data?.forecast,
+    root?.data?.[0]?.cuaca,
+    root?.data?.[0]?.forecast,
+    root?.cuaca,
+    root?.forecast,
   ].filter(Boolean);
 
   return candidates.flatMap((entry) => {
@@ -106,18 +107,19 @@ function extractForecastRows(data) {
 }
 
 function transformBmkgWeather(data, fallbackLocation = DEFAULT_WEATHER.location) {
+  const root = Array.isArray(data) ? data[0] : data;
   const forecasts = extractForecastRows(data);
   const [currentForecast, ...nextForecasts] = forecasts;
   if (!currentForecast) {
     return {
       ...DEFAULT_WEATHER,
-      location: formatLocation(data?.lokasi, fallbackLocation),
+      location: formatLocation(root?.lokasi, fallbackLocation),
     };
   }
 
   return {
-    location_code: resolveLocationCode(data?.lokasi?.adm4 || data?.location_code || data?.adm4 || DEFAULT_LOCATION_CODE),
-    location: formatLocation(data?.lokasi || data?.lokasi_terpilih, fallbackLocation),
+    location_code: resolveLocationCode(root?.lokasi?.adm4 || root?.location_code || root?.adm4 || DEFAULT_LOCATION_CODE),
+    location: formatLocation(root?.lokasi || root?.lokasi_terpilih, fallbackLocation),
     current: {
       temperature: toNumber(currentForecast.t, DEFAULT_WEATHER.current.temperature),
       humidity: toNumber(currentForecast.hu, DEFAULT_WEATHER.current.humidity),

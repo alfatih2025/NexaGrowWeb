@@ -22,7 +22,7 @@ export interface WeatherData {
 }
 
 const BMKG_URL = import.meta.env.VITE_BMKG_URL;
-const WEATHER_CACHE_PREFIX = 'nexagrow_weather_cache_v1';
+const WEATHER_CACHE_PREFIX = 'nexagrow_weather_cache_v3';
 
 function getWeatherCacheKey(locationCode: string) {
   return `${WEATHER_CACHE_PREFIX}:${locationCode}`;
