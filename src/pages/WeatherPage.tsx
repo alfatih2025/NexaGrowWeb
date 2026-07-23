@@ -386,26 +386,6 @@ export function WeatherPage({ locationCode, settings, updateSettings }: WeatherP
 
           <div className="grid gap-4 md:grid-cols-2">
             <div>
-              <label className="mb-2 block text-sm font-medium text-gray-700">Provinsi</label>
-
-              <div className="relative">
-
-                <select
-                  value={selection.province}
-                  onChange={(e) => handleProvinceChange(e.target.value)}
-                  className="w-full appearance-none rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 pr-10 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-                >
-                  {provinceOptions.map((item) => (
-                    <option key={item} value={item}>
-                      {item}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-              </div>
-            </div>
-
-            <div>
               <label className="mb-2 block text-sm font-medium text-gray-700">Kota / Kabupaten</label>
               <div className="relative">
                 <select
@@ -441,7 +421,7 @@ export function WeatherPage({ locationCode, settings, updateSettings }: WeatherP
               </div>
             </div>
 
-            <div>
+            <div className="md:col-span-2">
               <label className="mb-2 block text-sm font-medium text-gray-700">Kelurahan / Desa</label>
               <div className="relative">
                 <select
