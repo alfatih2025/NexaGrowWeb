@@ -29,7 +29,7 @@ NexaGrow adalah sistem **IoT Smart Farming** yang mengintegrasikan:
 | Komponen | Peran |
 |----------|-------|
 | **ESP32 (DoIT DevKit V1)** | Otak sistem: koneksi WiFi, komunikasi MQTT, logika kontrol otomatis, komunikasi serial dengan Arduino, sinkronisasi NTP/RTC, cache data cuaca BMKG, analitik pemakaian air, manajemen jadwal, dan antrian pesan MQTT offline |
-| **Arduino Nano** | Pembacaan sensor langsung (DHT11, soil moisture), kontrol relay pompa & LED, eksekusi jadwal penyiraman lokal, kalkulasi skor penyiraman, backup RTC DS3231 |
+| **Arduino Nano** | Pembacaan sensor langsung (DHT22, soil moisture), kontrol relay pompa & LED, eksekusi jadwal penyiraman lokal, kalkulasi skor penyiraman, backup RTC DS3231 |
 | **HiveMQ Cloud** | Broker MQTT cloud (TLS 8883) untuk komunikasi dua arah dengan dashboard web |
 | **Web Dashboard (React.js)** | Antarmuka pengguna berbasis web untuk monitoring & kontrol |
 | **BMKG API** | Data cuaca real-time untuk rekomendasi penyiraman (cached 6 jam) |
@@ -63,7 +63,7 @@ NexaGrow adalah sistem **IoT Smart Farming** yang mengintegrasikan:
 │   │                      │                           │   │
 │   │   ┌──────────────────▼──────────────────────┐   │   │
 │   │   │           Arduino Nano                  │   │   │
-│   │   │  DHT11, Soil Moisture, Relay, LED, RTC  │   │   │
+│   │   │  DHT22, Soil Moisture, Relay, LED, RTC  │   │   │
 │   │   └─────────────────────────────────────────┘   │   │
 │   └──────────────────────────────────────────────────┘   │
 └──────────────────────────────────────────────────────────┘
@@ -143,7 +143,7 @@ NexaGrow adalah sistem **IoT Smart Farming** yang mengintegrasikan:
 
 | Komponen | Keterangan |
 |----------|------------|
-| **DHT11** | Sensor suhu & kelembapan udara |
+| **DHT22** | Sensor suhu & kelembapan udara |
 | **Soil Moisture Sensor** | Sensor kelembapan tanah (analog) |
 | **Relay 1 channel** | Kontrol pompa air (ON/OFF) |
 | **LED** | Indikator status / lampu |
@@ -239,7 +239,7 @@ Sistem menggunakan 25+ topik MQTT dengan prefix `sproutai/`.
 | Topik | Arah | Format | Keterangan |
 |-------|------|--------|------------|
 | `sproutai/system/status` | ESP32 -> Web | String | Status sistem umum |
-| `sproutai/system/fault` | ESP32 -> Web | JSON | Fault sensor DHT11 |
+| `sproutai/system/fault` | ESP32 -> Web | JSON | Fault sensor DHT22 |
 | `sproutai/system/heartbeat` | ESP32 -> Web | JSON | Heartbeat (heap, WiFi RSSI, uptime) |
 | `sproutai/system/resource` | ESP32 -> Web | JSON | Resource monitoring (heap, warning) |
 | `sproutai/esp32/status` | ESP32 -> Web | String | Status ESP32 (ONLINE/OFFLINE) |
@@ -550,7 +550,7 @@ Setiap pesan adalah JSON object dalam satu baris, diakhiri `\n`.
 - **Resource Monitoring**: Heap warning di 50 KB, restart di 40 KB
 
 ### 7.7 Fault Detection & Recovery
-- **Sensor DHT11 Fault**: Deteksi nilai NAN, out-of-range (< -10C atau > 80C, < 0% atau > 100%)
+- **Sensor DHT22 Fault**: Deteksi nilai NAN, out-of-range (< -10C atau > 80C, < 0% atau > 100%)
 - **Timeout Arduino**: 15 detik tanpa data -> retry 3x -> reinit Serial2
 - **LED Indikator**: Internal LED (GPIO2) berkedip 500ms jika error sensor / timeout
 - **WiFi Fallback**: Otomatis kembali ke kredensial default jika kredensial tersimpan gagal
@@ -900,7 +900,7 @@ sproutai/history/upload
 1. **Hardware**:
    - ESP32 DoIT DevKit V1
    - Arduino Nano
-   - Sensor DHT11
+   - Sensor DHT22
    - Soil Moisture Sensor (analog)
    - Relay 1 channel
    - RTC DS3231 (optional)
@@ -1046,7 +1046,7 @@ Setelah boot, ESP32 akan:
 
 | Kemungkinan | Solusi |
 |-------------|--------|
-| DHT11 rusak | Ganti sensor DHT11 |
+| DHT22 rusak | Ganti sensor DHT22 |
 | Kabel sensor longgar | Periksa koneksi kabel |
 | Soil moisture kering | Kalibrasi ulang sensor (baca nilai ADC kering & basah) |
 | Interferensi listrik | Gunakan kabel shielded dan jauhkan dari sumber noise |
@@ -1087,7 +1087,7 @@ Setelah boot, ESP32 akan:
 | Pola Kedip | Arti |
 |-----------|------|
 | LED mati | Sistem normal, tidak ada error |
-| LED berkedip 500ms | Ada fault sensor DHT11 atau timeout komunikasi Arduino |
+| LED berkedip 500ms | Ada fault sensor DHT22 atau timeout komunikasi Arduino |
 
 ### 13.9 Debugging via Serial Monitor
 
