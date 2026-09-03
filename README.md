@@ -1,4 +1,4 @@
-# NexaGrow ESP32 - Smart Farming Automation System
+# NexaGrow NexaGrow ESP32 — Smart Farming Automation System
 
 **NexaGrow** adalah sistem otomatisasi pertanian cerdas berbasis **ESP32** yang terintegrasi dengan **Arduino Nano**, sensor lingkungan, aktuator, dan platform **IoT MQTT**. Sistem ini dirancang untuk memonitor dan mengontrol penyiraman tanaman secara otomatis maupun manual, dengan dukungan data cuaca real-time dari **BMKG** serta rekomendasi berbasis AI.
 
@@ -19,6 +19,9 @@
 11. [Spesifikasi Teknis](#11-spesifikasi-teknis)
 12. [Cara Menggunakan](#12-cara-menggunakan)
 13. [Troubleshooting](#13-troubleshooting)
+14. [Kontribusi](#14-kontribusi)
+15. [Lisensi](#15-lisensi)
+16. [Author](#16-author)
 
 ---
 
@@ -83,7 +86,7 @@ NexaGrow adalah sistem **IoT Smart Farming** yang mengintegrasikan:
 ```
 
 **ESP32** bertindak sebagai **gateway** yang menjembatani:
-- **Cloud → Arduino**: Perintah dari web dashboard dikirim via MQTT ke ESP32, lalu diferuskan ke Arduino melalui Serial2.
+- **Cloud → Arduino**: Perintah dari web dashboard dikirim via MQTT ke ESP32, lalu diteruskan ke Arduino melalui Serial2.
 - **Arduino → Cloud**: Data sensor dari Arduino dikirim via Serial2 ke ESP32, lalu dipublikasikan ke MQTT.
 - **ESP32 → Cloud (mandiri)**: Heartbeat, resource monitoring, rekomendasi AI, data cuaca BMKG.
 
@@ -1120,18 +1123,17 @@ Log level yang tersedia:
 
 ---
 
-## Kontribusi
+## 14. Kontribusi
 
 Silakan buka *issue* atau *pull request* untuk saran perbaikan atau fitur baru.
 
-📄 License
-Project ini bersifat Open Source dan dapat digunakan untuk pembelajaran, penelitian, maupun pengembangan lebih lanjut.
+## 15. Lisensi
+Project ini bersifat open source dan dapat digunakan untuk pembelajaran, penelitian, maupun pengembangan lebih lanjut.
 
-👨‍💻 Author
+## 16. Author
 Habibullah Naja Alfatih Wibowo
 
 AI • IoT • Embedded Systems • Software Developer
 
 GitHub: https://github.com/alfatih2025 Jika repository ini bermanfaat, jangan lupa memberikan ⭐ pada repository GitHub.
-#   N e x a G r o w N E X T  
- 
+#
