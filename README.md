@@ -1,4 +1,4 @@
-# NexaGrow NexaGrow ESP32 — Intelligent Plant Monitoring
+# NexaGrow — Intelligent Plant Monitoring
 
 **NexaGrow** adalah sistem otomatisasi pertanian cerdas berbasis **ESP32** yang terintegrasi dengan **Arduino Nano**, sensor lingkungan, aktuator, dan platform **IoT MQTT**. Sistem ini dirancang untuk memonitor dan mengontrol penyiraman tanaman secara otomatis maupun manual, dengan dukungan data cuaca real-time dari **BMKG** serta rekomendasi berbasis AI.
 
