@@ -1,4 +1,5 @@
 import { requireApiAuth } from '../src/lib/apiHelpers/_auth.js';
+import { applyCors, getErrorMessage } from '../src/lib/apiHelpers/_http.js';
 import {
   buildFormulaReference,
   isArduinoFormulaRequest,
@@ -7,11 +8,7 @@ import {
 } from '../src/lib/apiHelpers/_openrouter.js';
 
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-
-  if (req.method === 'OPTIONS') return res.status(204).end();
+  if (applyCors(req, res, { methods: 'GET, POST, OPTIONS', headers: 'Content-Type, Authorization' })) return;
   if (!requireApiAuth(req, res)) return;
 
   if (req.method === 'GET') {
@@ -52,7 +49,7 @@ export default async function handler(req, res) {
     return res.status(200).json(result);
   } catch (error) {
     return res.status(500).json({
-      error: error instanceof Error ? error.message : 'Unknown OpenRouter error',
+      error: getErrorMessage(error, 'Unknown OpenRouter error'),
     });
   }
 }

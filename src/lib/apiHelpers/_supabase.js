@@ -1,13 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { triggerRestore } from './_wake.js';
-
-function readEnv(...names) {
-  for (const name of names) {
-    const value = process.env[name];
-    if (typeof value === 'string' && value.trim()) return value.trim();
-  }
-  return '';
-}
+import { readEnv } from './_env.js';
 
 const SUPABASE_URL = readEnv('SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_URL', 'VITE_SUPABASE_URL');
 const SUPABASE_KEY = readEnv(
