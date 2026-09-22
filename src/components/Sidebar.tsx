@@ -15,12 +15,22 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import logo from '../assets/nexagrow-logo.png';
 
+export type PageId =
+  | 'dashboard'
+  | 'monitoring'
+  | 'chat'
+  | 'control'
+  | 'weather'
+  | 'logs'
+  | 'settings'
+  | 'about';
+
 interface SidebarProps {
-  currentPage: string;
-  onPageChange: (page: string) => void;
+  currentPage: PageId;
+  onPageChange: (page: PageId) => void;
 }
 
-const menuItems = [
+const menuItems: { id: PageId; label: string; icon: typeof LayoutDashboard }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'monitoring', label: 'Monitoring', icon: Activity },
   { id: 'chat', label: 'AI Chat', icon: MessageSquare },
@@ -117,7 +127,7 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
               <span className="font-semibold">NexaGrow AI</span>
             </div>
             <p className="text-xs leading-relaxed text-slate-300/80">
-              Monitoring sensor, jadwal penyiraman, dan analisis tanaman terhubung langsung ke ESP32 serta Arduino Nano.
+              Monitoring sensor, jadwal penyiraman, dan analisis tanaman.
             </p>
           </div>
         </div>

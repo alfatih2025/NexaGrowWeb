@@ -26,7 +26,7 @@ const WEATHER_LOCATION_MAP = {
 
 function resolveLocationCode(value) {
   const raw = String(value || '').trim();
-  return /^\d{2}(?:\.\d{2}){1,3}$/.test(raw) ? raw : DEFAULT_LOCATION_CODE;
+  return /^\d{2}(?:\.\d{2}){1,2}(?:\.\d{1,4})?$/.test(raw) ? raw : DEFAULT_LOCATION_CODE;
 }
 
 function resolveLocationLabel(code) {
@@ -71,10 +71,11 @@ function toNumber(value, fallback) {
 }
 
 function getRainChance(weatherCode) {
-  const normalized = String(weatherCode ?? '').trim();
-  if (normalized === '0') return 0;
-  if (['1', '2', '3'].includes(normalized)) return 10;
-  if (['4', '5', '6', '7'].includes(normalized)) return 35;
+  const normalized = String(weatherCode ?? '').trim().toLowerCase();
+  if (normalized === '0' || normalized === 'nol') return 0;
+  if (['1', '2', '3', 'ringan', 'cerah'].includes(normalized)) return 10;
+  if (['4', '5', '6', '7', 'berawan', 'hujan ringan'].includes(normalized)) return 35;
+  if (normalized.includes('hujan')) return 70;
   return 60;
 }
 
@@ -88,19 +89,37 @@ function formatLocation(location, fallbackLocation = DEFAULT_WEATHER.location) {
   return parts.length > 0 ? parts.join(', ') : fallbackLocation;
 }
 
+function extractForecastRows(data) {
+  const root = Array.isArray(data) ? data[0] : data;
+  const candidates = [
+    root?.data?.[0]?.cuaca,
+    root?.data?.[0]?.forecast,
+    root?.cuaca,
+    root?.forecast,
+  ].filter(Boolean);
+
+  return candidates.flatMap((entry) => {
+    if (Array.isArray(entry)) {
+      return entry.flatMap((item) => (Array.isArray(item) ? item : [item]));
+    }
+    return [];
+  }).filter(Boolean);
+}
+
 function transformBmkgWeather(data, fallbackLocation = DEFAULT_WEATHER.location) {
-  const forecasts = data?.data?.[0]?.cuaca?.flat() || [];
+  const root = Array.isArray(data) ? data[0] : data;
+  const forecasts = extractForecastRows(data);
   const [currentForecast, ...nextForecasts] = forecasts;
   if (!currentForecast) {
     return {
       ...DEFAULT_WEATHER,
-      location: formatLocation(data?.lokasi, fallbackLocation),
+      location: formatLocation(root?.lokasi, fallbackLocation),
     };
   }
 
   return {
-    location_code: resolveLocationCode(data?.lokasi?.adm4 || data?.location_code || data?.adm4 || DEFAULT_LOCATION_CODE),
-    location: formatLocation(data.lokasi, fallbackLocation),
+    location_code: resolveLocationCode(root?.lokasi?.adm4 || root?.location_code || root?.adm4 || DEFAULT_LOCATION_CODE),
+    location: formatLocation(root?.lokasi || root?.lokasi_terpilih, fallbackLocation),
     current: {
       temperature: toNumber(currentForecast.t, DEFAULT_WEATHER.current.temperature),
       humidity: toNumber(currentForecast.hu, DEFAULT_WEATHER.current.humidity),
@@ -125,12 +144,54 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(204).end();
 
   try {
-    const locationCode = req.query?.location || req.query?.adm4 || DEFAULT_LOCATION_CODE;
-    const normalizedCode = resolveLocationCode(locationCode);
+      const urlStr = String(req.url || '');
+      let queryLocation = req.query?.location || req.query?.adm4;
+      if (Array.isArray(queryLocation)) {
+        queryLocation = queryLocation[0];
+      }
+
+      // Fallback manual URL parsing if req.query is unavailable or stripped.
+      if (!queryLocation && urlStr.includes('?')) {
+        try {
+          const url = new URL(urlStr, `http://${req.headers.host || 'localhost'}`);
+          queryLocation = url.searchParams.get('location') || url.searchParams.get('adm4');
+        } catch {
+          // ignore URL parsing errors
+        }
+      }
+
+      const locationCode = String(queryLocation || DEFAULT_LOCATION_CODE).trim();
+      const normalizedCode = resolveLocationCode(locationCode);
     const bmkgUrl = resolveBmkgUrl(normalizedCode);
-    const response = await fetch(bmkgUrl);
-    if (!response.ok) throw new Error('Failed to fetch BMKG weather');
-    const bmkgData = await response.json();
+    
+    let bmkgData = null;
+    let lastError = null;
+
+    try {
+      const response = await fetch(bmkgUrl, {
+        headers: {
+          Accept: 'application/json',
+          'User-Agent': 'Mozilla/5.0',
+        },
+        next: { revalidate: 0 }, // Disable cache for Vercel
+      });
+      if (!response.ok) {
+        lastError = `HTTP ${response.status}`;
+      } else {
+        bmkgData = await response.json();
+      }
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err);
+    }
+
+    if (!bmkgData) {
+      return res.status(502).json({
+        error: 'BMKG API unavailable',
+        location_code: normalizedCode,
+        location: resolveLocationLabel(normalizedCode)
+      });
+    }
+
     const weatherData = transformBmkgWeather(bmkgData, resolveLocationLabel(normalizedCode));
     weatherData.location_code = normalizedCode;
 
@@ -144,7 +205,11 @@ export default async function handler(req, res) {
 
     return res.status(200).json(weatherData);
   } catch (err) {
-    console.error('Weather API error:', err);
-    return res.status(200).json(DEFAULT_WEATHER);
+    console.error('[Weather API] Unexpected error:', err);
+    return res.status(500).json({
+      error: 'Internal server error',
+      location_code: normalizedCode,
+      location: resolveLocationLabel(normalizedCode)
+    });
   }
 }

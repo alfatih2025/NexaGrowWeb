@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback, ReactNode } from 'react';
 import { buildApiHeaders } from '../lib/apiAuth';
 import { getPhaseDefaults, normalizePlantPhase, type PlantPhase } from '../lib/plantPhase';
 import { DEFAULT_WEATHER_LOCATION_CODE, normalizeWeatherLocationCode } from '../lib/weatherLocations';
@@ -27,10 +27,10 @@ export interface Settings {
   soil_moisture_threshold?: number;
 }
 
+const STORAGE_KEY = 'nexagrow-settings-cache-v2';
+
 const DEFAULT_PHASE = 'vegetatif' as const;
 const phaseDefaults = getPhaseDefaults(DEFAULT_PHASE);
-const STORAGE_KEY = 'nexagrow-settings-cache-v2';
-const SETTINGS_EVENT = 'nexagrow:settings-updated';
 
 export const DEFAULT_SETTINGS: Settings = {
   id: 1,
@@ -72,43 +72,6 @@ function toBoolean(value: unknown, fallback = false) {
   return fallback;
 }
 
-function clampRange(lowValue: number, highValue: number, min: number, max: number, fallbackLow: number, fallbackHigh: number) {
-  const highFloor = Math.min(max, Math.max(min + 1, highValue));
-  const lowCeil = Math.min(highFloor - 1, Math.max(min, lowValue));
-  const low = Number.isFinite(lowCeil) ? lowCeil : fallbackLow;
-  const high = Number.isFinite(highFloor) ? highFloor : fallbackHigh;
-  if (low >= high) {
-    const safeLow = Math.min(fallbackLow, fallbackHigh - 1);
-    const safeHigh = Math.max(fallbackHigh, safeLow + 1);
-    return [safeLow, safeHigh] as const;
-  }
-  return [low, high] as const;
-}
-
-function readStoredSettings(): Settings | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<Settings>;
-    return normalizeSettings(parsed);
-  } catch {
-    return null;
-  }
-}
-
-function persistSettings(settings: Settings, emitEvent = true) {
-  if (typeof window === 'undefined') return;
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
-    if (emitEvent) {
-      window.dispatchEvent(new CustomEvent(SETTINGS_EVENT, { detail: settings }));
-    }
-  } catch {
-    // ignore storage failures
-  }
-}
-
 function normalizeSettings(input: Partial<Settings> | null | undefined): Settings {
   const value = { ...DEFAULT_SETTINGS };
   for (const [key, item] of Object.entries(input || {})) {
@@ -125,8 +88,7 @@ function normalizeSettings(input: Partial<Settings> | null | undefined): Setting
   const rawHumidityLow = toFiniteNumber((value as Record<string, unknown>).humidity_threshold_low ?? (value as Record<string, unknown>).air_humidity_low, defaults.humidityRange[0]);
   const rawHumidityHigh = toFiniteNumber((value as Record<string, unknown>).humidity_threshold_high ?? (value as Record<string, unknown>).air_humidity_high, defaults.humidityRange[1]);
 
-  const [soilLow, soilHigh] = clampRange(rawLow, rawHigh, 0, 100, defaults.soil_threshold_low, defaults.soil_threshold_high);
-  const [humidityLow, humidityHigh] = clampRange(rawHumidityLow, rawHumidityHigh, 0, 100, defaults.humidityRange[0], defaults.humidityRange[1]);
+  const [soilLow, soilHigh] = [rawLow, rawHigh].sort((a, b) => a - b);
   const critical = Math.min(Math.max(0, rawCritical), soilLow);
 
   return {
@@ -140,8 +102,8 @@ function normalizeSettings(input: Partial<Settings> | null | undefined): Setting
     soil_threshold_low: soilLow,
     soil_threshold_high: soilHigh,
     soil_threshold_critical: critical,
-    humidity_threshold_low: humidityLow,
-    humidity_threshold_high: humidityHigh,
+    humidity_threshold_low: rawHumidityLow,
+    humidity_threshold_high: rawHumidityHigh,
     ph_min: toFiniteNumber(value.ph_min, DEFAULT_SETTINGS.ph_min),
     ph_max: toFiniteNumber(value.ph_max, DEFAULT_SETTINGS.ph_max),
     auto_report: toBoolean(value.auto_report, DEFAULT_SETTINGS.auto_report),
@@ -155,17 +117,39 @@ function normalizeSettings(input: Partial<Settings> | null | undefined): Setting
   };
 }
 
-export function useSettings() {
+function readStoredSettings(): Settings | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<Settings>;
+    return normalizeSettings(parsed);
+  } catch {
+    return null;
+  }
+}
+
+function persistSettings(settings: Settings) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+    window.dispatchEvent(new CustomEvent('nexagrow:settings-updated', { detail: settings }));
+  } catch {
+    // ignore
+  }
+}
+
+interface SettingsContextType {
+  settings: Settings | null;
+  loading: boolean;
+  updateSettings: (updates: Partial<Settings>) => Promise<Settings>;
+}
+
+const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
+
+export function SettingsProvider({ children }: { children: ReactNode }) {
   const [settings, setSettings] = useState<Settings | null>(() => readStoredSettings());
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const syncLocalSettings = useCallback((next: Settings) => {
-    const normalized = normalizeSettings(next);
-    setSettings(normalized);
-    persistSettings(normalized, true);
-    return normalized;
-  }, []);
 
   const fetchSettings = useCallback(async () => {
     setLoading(true);
@@ -173,60 +157,47 @@ export function useSettings() {
       const res = await fetch('/api/settings', { headers: buildApiHeaders() });
       if (!res.ok) throw new Error('Failed to fetch settings');
       const data = await res.json();
-      const normalized = syncLocalSettings(normalizeSettings(data));
-      setError(null);
-      return normalized;
+      const normalized = normalizeSettings(data);
+      setSettings(normalized);
+      persistSettings(normalized);
     } catch (err) {
       const fallback = readStoredSettings() ?? DEFAULT_SETTINGS;
       setSettings(fallback);
-      persistSettings(fallback, true);
-      setError(err instanceof Error ? err.message : 'Unknown error');
-      return fallback;
+      persistSettings(fallback);
     } finally {
       setLoading(false);
     }
-  }, [syncLocalSettings]);
+  }, []);
 
   const updateSettings = useCallback(
     async (updates: Partial<Settings>) => {
-      setLoading(true);
       const previous = settings ? normalizeSettings(settings) : DEFAULT_SETTINGS;
       const payload = normalizeSettings({ ...previous, ...updates });
 
-      // Optimistic update: UI/dashboard langsung mengikuti perubahan lokal.
-      // Jika API sedang bermasalah, perubahan tetap dipertahankan di browser.
-      syncLocalSettings(payload);
+      // Optimistic update
+      setSettings(payload);
+      persistSettings(payload);
 
       try {
         const res = await fetch('/api/settings', {
           method: 'PUT',
-          headers: buildApiHeaders({
-            'Content-Type': 'application/json',
-          }),
+          headers: buildApiHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify(payload),
         });
 
-        if (!res.ok) {
-          const message = `Failed to update settings (${res.status})`;
-          setError(message);
-          return payload;
-        }
-
+        if (!res.ok) throw new Error('Failed to update settings');
         const data = await res.json();
-        const normalized = syncLocalSettings(normalizeSettings(data));
-        setError(null);
+        const normalized = normalizeSettings(data);
+        setSettings(normalized);
+        persistSettings(normalized);
         return normalized;
       } catch (err) {
-        // Tetap gunakan payload lokal agar dashboard/cuaca tidak balik ke nilai lama.
-        // Ini penting karena MQTT ke ESP32 tetap harus tetap bisa dikirim meski API gagal.
         const message = err instanceof Error ? err.message : 'Unknown error';
-        setError(message);
-        return payload;
-      } finally {
-        setLoading(false);
+        // Keep local update if API fails
+        throw new Error(message);
       }
     },
-    [settings, syncLocalSettings],
+    [settings],
   );
 
   useEffect(() => {
@@ -236,39 +207,43 @@ export function useSettings() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    const handleExternalSync = (event: Event) => {
-      const detail = (event as CustomEvent<Partial<Settings>>).detail;
-      if (!detail || typeof detail !== 'object') return;
-      setSettings((current) => {
-        const normalized = normalizeSettings({ ...(current ?? DEFAULT_SETTINGS), ...detail });
-        persistSettings(normalized, false);
-        return normalized;
-      });
-    };
-
     const handleStorage = (event: StorageEvent) => {
       if (event.key !== STORAGE_KEY || !event.newValue) return;
       try {
         const parsed = JSON.parse(event.newValue) as Partial<Settings>;
         setSettings(normalizeSettings(parsed));
       } catch {
-        // ignore invalid storage updates
+        // ignore
       }
     };
 
-    window.addEventListener(SETTINGS_EVENT, handleExternalSync);
+    const handleSettingsUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<Partial<Settings>>).detail;
+      if (!detail || typeof detail !== 'object') return;
+      setSettings(normalizeSettings(detail));
+    };
+
     window.addEventListener('storage', handleStorage);
+    window.addEventListener('nexagrow:settings-updated', handleSettingsUpdated);
     return () => {
-      window.removeEventListener(SETTINGS_EVENT, handleExternalSync);
       window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('nexagrow:settings-updated', handleSettingsUpdated);
     };
   }, []);
 
-  return {
-    settings,
-    loading,
-    error,
-    refetch: fetchSettings,
-    updateSettings,
-  };
+  return (
+    <SettingsContext.Provider value={{ settings, loading, updateSettings }}>
+      {children}
+    </SettingsContext.Provider>
+  );
+}
+
+export function useSettings() {
+  const context = useContext(SettingsContext);
+  if (!context) {
+    // Fallback for when used outside provider (development/testing)
+    const [settings, setSettings] = useState<Settings | null>(() => readStoredSettings());
+    return { settings, loading: false, updateSettings: async () => settings || DEFAULT_SETTINGS };
+  }
+  return context;
 }

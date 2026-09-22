@@ -108,6 +108,7 @@ function normalizeSensorContext(sensorContext?: Partial<SensorSnapshotContext> |
     weather_temperature: typeof sensorContext.weather_temperature === 'number' ? sensorContext.weather_temperature : null,
     weather_rain_chance: typeof sensorContext.weather_rain_chance === 'number' ? sensorContext.weather_rain_chance : null,
     weather_forecast_location: typeof sensorContext.weather_forecast_location === 'string' ? sensorContext.weather_forecast_location : null,
+    weather_forecast: typeof sensorContext.weather_forecast === 'string' ? sensorContext.weather_forecast : null,
   };
 }
 

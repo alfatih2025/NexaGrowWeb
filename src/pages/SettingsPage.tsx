@@ -19,6 +19,10 @@ export function SettingsPage() {
   const [formData, setFormData] = useState<Partial<SettingsType>>({});
   const [isDirty, setIsDirty] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+  // Status pengiriman MQTT ke ESP32, terpisah dari status simpan ke database.
+  // Sebelumnya hasil sendCommand() dibuang begitu saja sehingga kegagalan MQTT
+  // tidak pernah terlihat di UI.
+  const [syncError, setSyncError] = useState<string | null>(null);
   const [wifiSsid, setWifiSsid] = useState('');
   const [wifiPassword, setWifiPassword] = useState('');
   const [wifiStatus, setWifiStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
@@ -62,81 +66,140 @@ export function SettingsPage() {
 
   const handleSave = async () => {
     setSaveStatus('saving');
+    setSyncError(null);
+
+    // Bangun payload dari formData dengan fallback ke settings yang ada
+    const rawWateringTime = formData.watering_time || settings?.watering_time || '06:00';
+    // Bug #3 Fix: Validasi format HH:MM sebelum dipakai — jika tidak valid, fallback ke '06:00'
+    const safeWateringTime = /^\d{2}:\d{2}$/.test(rawWateringTime) ? rawWateringTime : '06:00';
+
+    const payload: Partial<SettingsType> = {
+      ...formData,
+      plant_phase: currentPhase,
+      crop_mode: currentPhase,
+      location: String(formData.location ?? settings?.location ?? '').trim() || settings?.location || '',
+      watering_time: safeWateringTime,
+      watering_duration: Number(formData.watering_duration ?? settings?.watering_duration ?? 10),
+      watering_enabled: Boolean(formData.watering_enabled ?? settings?.watering_enabled ?? true),
+      temp_threshold_low: Number(formData.temp_threshold_low ?? settings?.temp_threshold_low ?? phaseProfile.tempRange[0]),
+      temp_threshold_high: Number(formData.temp_threshold_high ?? settings?.temp_threshold_high ?? phaseProfile.tempRange[1]),
+      humidity_threshold_low: Number(formData.humidity_threshold_low ?? settings?.humidity_threshold_low ?? phaseProfile.humidityRange[0]),
+      humidity_threshold_high: Number(formData.humidity_threshold_high ?? settings?.humidity_threshold_high ?? phaseProfile.humidityRange[1]),
+      soil_threshold_low: Number(formData.soil_threshold_low ?? settings?.soil_threshold_low ?? phaseProfile.soilRange[0]),
+      soil_threshold_high: Number(formData.soil_threshold_high ?? settings?.soil_threshold_high ?? phaseProfile.soilRange[1]),
+      soil_threshold_critical: Number(formData.soil_threshold_critical ?? settings?.soil_threshold_critical ?? phaseProfile.criticalSoil),
+    };
+
+    // Bug #2 Fix: Simpan ke API database dulu (tapi jangan blokir pengiriman MQTT jika gagal).
+    // updateSettings() dari hooks/useSettings tidak pernah throw — jika API gagal,
+    // ia return payload lokal sehingga normalized selalu valid.
+    let normalized: SettingsType;
     try {
-      const payload: Partial<SettingsType> = {
-        ...formData,
-        plant_phase: currentPhase,
-        crop_mode: currentPhase,
-        location: String(formData.location ?? settings?.location ?? '').trim() || settings?.location || '',
+      normalized = await updateSettings(payload);
+    } catch {
+      // Fallback ke payload lokal agar MQTT tetap bisa dikirim walau API bermasalah
+      normalized = payload as SettingsType;
+    }
 
-        watering_time: formData.watering_time || settings?.watering_time || '06:00',
-        watering_duration: Number(formData.watering_duration ?? settings?.watering_duration ?? 10),
-        watering_enabled: Boolean(formData.watering_enabled ?? settings?.watering_enabled ?? true),
-        temp_threshold_low: Number(formData.temp_threshold_low ?? settings?.temp_threshold_low ?? phaseProfile.tempRange[0]),
-        temp_threshold_high: Number(formData.temp_threshold_high ?? settings?.temp_threshold_high ?? phaseProfile.tempRange[1]),
-        humidity_threshold_low: Number(formData.humidity_threshold_low ?? settings?.humidity_threshold_low ?? phaseProfile.humidityRange[0]),
-        humidity_threshold_high: Number(formData.humidity_threshold_high ?? settings?.humidity_threshold_high ?? phaseProfile.humidityRange[1]),
-        soil_threshold_low: Number(formData.soil_threshold_low ?? settings?.soil_threshold_low ?? phaseProfile.soilRange[0]),
-        soil_threshold_high: Number(formData.soil_threshold_high ?? settings?.soil_threshold_high ?? phaseProfile.soilRange[1]),
-        soil_threshold_critical: Number(formData.soil_threshold_critical ?? settings?.soil_threshold_critical ?? phaseProfile.criticalSoil),
-      };
+    // DEBUG: pastikan payload threshold valid dan benar-benar dikirim ke MQTT.
+    // Buka DevTools Console di browser untuk melihat output ini.
+    console.log('[SettingsPage] settings_sync payload', {
+      soil_threshold_low: normalized.soil_threshold_low,
+      soil_threshold_high: normalized.soil_threshold_high,
+      soil_threshold_critical: normalized.soil_threshold_critical,
+      watering_time: normalized.watering_time,
+      watering_duration: normalized.watering_duration,
+      watering_enabled: normalized.watering_enabled,
+      plant_phase: normalized.plant_phase,
+    });
 
-      const normalized = await updateSettings(payload);
+    const weatherForecastSummary = weatherData?.forecast?.length
+      ? weatherData.forecast
+          .slice(0, 5)
+          .map((item) => {
+            const date = new Date(item.datetime);
+            const formatted = Number.isFinite(date.getTime())
+              ? date.toLocaleString('id-ID', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+              : String(item.datetime);
+            return `${formatted}: ${item.weather}, ${item.temperature}°C, peluang hujan ${item.rain_chance}%`;
+          })
+          .join(' | ')
+      : null;
 
-      await Promise.race([
-        Promise.all([
-          sendCommand('settings_sync', undefined, {
-            plant_phase: normalized.plant_phase,
-            location: normalized.location,
-            weather_location: normalized.location,
-            weather_condition: weatherData?.current.weather,
-            weather_rain_chance: weatherData?.current.rain_chance,
-            weather_temperature: weatherData?.current.temperature,
-            temp_threshold_low: normalized.temp_threshold_low,
-            temp_threshold_high: normalized.temp_threshold_high,
-            humidity_threshold_low: normalized.humidity_threshold_low,
-            humidity_threshold_high: normalized.humidity_threshold_high,
-            soil_threshold_low: normalized.soil_threshold_low,
-            soil_threshold_high: normalized.soil_threshold_high,
-            soil_threshold_critical: normalized.soil_threshold_critical,
-            watering_time: normalized.watering_time,
-            watering_duration: normalized.watering_duration,
-            watering_enabled: normalized.watering_enabled,
-            auto_report: normalized.auto_report,
-            report_time: normalized.report_time,
-          }).catch(() => undefined),
-
-          sendCommand('schedule_set', undefined, {
-            watering_time: normalized.watering_time,
-            watering_duration: normalized.watering_duration,
-            schedule_enabled: normalized.watering_enabled,
-            watering_enabled: normalized.watering_enabled,
-          }).catch(() => undefined),
-        ]),
-        new Promise((resolve) => window.setTimeout(() => resolve(undefined), 1800)),
+    try {
+      // Bug #2 Fix: Pengiriman MQTT ke ESP32 SELALU dijalankan, tidak bergantung pada
+      // keberhasilan API database di atas. sendCommand() sudah punya timeout internal
+      // (~10 detik) dan SELALU resolve dengan { success, error } — tidak pernah throw.
+      const [settingsSyncResult, scheduleSetResult] = await Promise.all([
+        sendCommand('settings_sync', undefined, {
+          plant_phase: normalized.plant_phase,
+          location: normalized.location,
+          weather_location: normalized.location,
+          weather_condition: weatherData?.current.weather,
+          weather_rain_chance: weatherData?.current.rain_chance,
+          weather_temperature: weatherData?.current.temperature,
+          weather_forecast: weatherForecastSummary,
+          temp_threshold_low: normalized.temp_threshold_low,
+          temp_threshold_high: normalized.temp_threshold_high,
+          humidity_threshold_low: normalized.humidity_threshold_low,
+          humidity_threshold_high: normalized.humidity_threshold_high,
+          soil_threshold_low: normalized.soil_threshold_low,
+          soil_threshold_high: normalized.soil_threshold_high,
+          soil_threshold_critical: normalized.soil_threshold_critical,
+          watering_time: normalized.watering_time,
+          watering_duration: normalized.watering_duration,
+          watering_enabled: normalized.watering_enabled,
+          auto_report: normalized.auto_report,
+          report_time: normalized.report_time,
+        }),
+        sendCommand('schedule_set', undefined, {
+          watering_time: normalized.watering_time,
+          watering_duration: normalized.watering_duration,
+          schedule_enabled: normalized.watering_enabled,
+          watering_enabled: normalized.watering_enabled,
+        }),
       ]);
+
+      const failedCommands: string[] = [];
+      if (!settingsSyncResult.success) failedCommands.push('settings_sync');
+      if (!scheduleSetResult.success) failedCommands.push('schedule_set');
+      const mqttSynced = failedCommands.length === 0;
 
       recordActivity({
         source: 'settings',
         type: 'settings_saved',
         title: 'Pengaturan disimpan',
-        message: `Fase ${normalized.plant_phase} dan ambang batas sensor berhasil diperbarui.`,
+        message: mqttSynced
+          ? `Fase ${normalized.plant_phase} dan ambang batas sensor berhasil diperbarui & dikirim ke ESP32.`
+          : `Fase ${normalized.plant_phase} dan ambang batas sensor tersimpan di database, tapi GAGAL dikirim ke ESP32 (${failedCommands.join(', ')}).`,
         details: {
           phase: normalized.plant_phase,
           location: normalized.location,
           temp: [normalized.temp_threshold_low, normalized.temp_threshold_high],
           humidity: [normalized.humidity_threshold_low, normalized.humidity_threshold_high],
           soil: [normalized.soil_threshold_low, normalized.soil_threshold_high, normalized.soil_threshold_critical],
+          mqtt_synced: mqttSynced,
         },
       });
 
       setFormData(normalized);
       setIsDirty(false);
       setSaveStatus('saved');
-      setTimeout(() => setSaveStatus('idle'), 2000);
-    } catch {
+
+      if (!mqttSynced) {
+        // Data sudah aman di database, tapi ESP32 belum tentu menerima
+        // perubahan ini. Tampilkan alasannya supaya tidak menyesatkan.
+        const reason = settingsSyncResult.error || scheduleSetResult.error || 'MQTT tidak terkirim';
+        setSyncError(`Tersimpan, tapi gagal dikirim ke ESP32 (${failedCommands.join(', ')}): ${reason}`);
+      } else {
+        setSyncError(null);
+      }
+
+      setTimeout(() => setSaveStatus('idle'), 2500);
+    } catch (err) {
       setIsDirty(false);
       setSaveStatus('idle');
+      setSyncError(err instanceof Error ? err.message : 'Gagal mengirim perintah ke ESP32');
     }
   };
 
@@ -314,8 +377,13 @@ export function SettingsPage() {
       </div>
 
       <div className="flex items-center justify-between">
-        <div className="text-sm text-gray-500">
-          {saveStatus === 'saved' ? 'Pengaturan berhasil disimpan.' : ''}
+        <div className="text-sm">
+          {saveStatus === 'saved' && !syncError && (
+            <span className="text-gray-500">Pengaturan tersimpan &amp; berhasil dikirim ke ESP32.</span>
+          )}
+          {saveStatus === 'saved' && syncError && (
+            <span className="text-amber-600">{syncError}</span>
+          )}
         </div>
         <button onClick={handleSave} className="rounded-xl bg-emerald-600 px-6 py-3 font-semibold text-white shadow-sm">
           {saveStatus === 'saving' ? 'Menyimpan...' : 'Simpan Pengaturan'}

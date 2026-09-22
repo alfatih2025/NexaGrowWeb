@@ -15,6 +15,25 @@ const SEMARANG_DISTRICT_MAP = {
   '33.74.14': 'Mijen',
   '33.74.15': 'Ngaliyan',
   '33.74.16': 'Tugu',
+  '33.22.01': 'Getasan',
+  '33.22.02': 'Tengaran',
+  '33.22.03': 'Susukan',
+  '33.22.04': 'Suruh',
+  '33.22.05': 'Pabelan',
+  '33.22.06': 'Tuntang',
+  '33.22.07': 'Banyubiru',
+  '33.22.08': 'Jambu',
+  '33.22.09': 'Sumowono',
+  '33.22.10': 'Ambarawa',
+  '33.22.11': 'Bawen',
+  '33.22.12': 'Bringin',
+  '33.22.13': 'Bergas',
+  '33.22.15': 'Pringapus',
+  '33.22.16': 'Bancak',
+  '33.22.17': 'Kaliwungu',
+  '33.22.18': 'Ungaran Barat',
+  '33.22.19': 'Ungaran Timur',
+  '33.22.20': 'Bandungan',
 };
 
 function json(statusCode, body) {
@@ -40,7 +59,7 @@ function resolveSemarangDistrict(code) {
 
 function parseLocationLinks(html, districtCode, districtLabel) {
   const items = new Map();
-  const pattern = /<a[^>]+href="[^"]*\/cuaca\/prakiraan-cuaca\/(\d{2}(?:\.\d{2}){1,3})[^"]*"[^>]*>(.*?)<\/a>/gi;
+  const pattern = /<a[^>]+href="[^"]*\/cuaca\/prakiraan-cuaca\/([\d.]+)[^"]*"[^>]*>(.*?)<\/a>/gi;
 
   let match;
   while ((match = pattern.exec(html)) !== null) {
@@ -52,7 +71,7 @@ function parseLocationLinks(html, districtCode, districtLabel) {
       .trim();
 
     if (!code.startsWith(`${districtCode}.`)) continue;
-    if (!/^\d{2}(?:\.\d{2}){3}$/.test(code)) continue;
+    if (!/^\d{2}(?:\.\d{2}){1,2}(?:\.\d{1,4})?$/.test(code)) continue;
     if (!rawLabel || /prakiraan|cuaca|bmkg|kecamatan/i.test(rawLabel)) continue;
 
     items.set(code, {

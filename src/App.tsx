@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { motion } from 'framer-motion';
-import { Sidebar } from './components/Sidebar';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Sidebar, type PageId } from './components/Sidebar';
 import { Header } from './components/Header';
 import { Dashboard } from './pages/Dashboard';
 import { Monitoring } from './pages/Monitoring';
@@ -19,13 +19,33 @@ import { useSettings } from './hooks/useSettings';
 import { useAlerts } from './hooks/useAlerts';
 import { useMqttStatus } from './hooks/useMqttStatus';
 import { getPlantHealthSummary } from './lib/plantPhase';
-import { getSensorHistorySnapshot } from './services/mqtt';
+import { getSensorHistorySnapshot, publishRainChance } from './services/mqtt';
 import { recordActivity } from './lib/activityLog';
 
 import './index.css';
 
+function resolvePageFromPath(pathname: string) {
+  const normalized = pathname.replace(/^\/+|\/+$/g, '').toLowerCase();
+  switch (normalized) {
+    case 'dashboard':
+    case 'monitoring':
+    case 'chat':
+    case 'control':
+    case 'weather':
+    case 'logs':
+    case 'settings':
+    case 'about':
+      return normalized;
+    default:
+      return 'dashboard';
+  }
+}
+
 function App() {
-  const [currentPage, setCurrentPage] = useState('dashboard');
+  const [currentPage, setCurrentPage] = useState<PageId>(() => {
+    if (typeof window === 'undefined') return 'dashboard';
+    return resolvePageFromPath(window.location.pathname) as PageId;
+  });
   const { data: sensorData, history, loading: sensorLoading } = useSensorData(3000);
 
   const { status: deviceStatus } = useDeviceStatus(5000);
@@ -65,6 +85,14 @@ function App() {
         title: pageName,
       },
     });
+  }, [currentPage]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const path = currentPage === 'dashboard' ? '/' : `/${currentPage}`;
+    if (window.location.pathname !== path) {
+      window.history.replaceState(null, '', path);
+    }
   }, [currentPage]);
 
   const liveSensorData = useMemo(() => {
@@ -145,8 +173,8 @@ function App() {
 
       for (const item of alerts) {
         await createAlert(item.type, item.message, item.severity, {
-          sendEmail: Boolean(item.sendEmail),
-          recipientEmail: settings.user_email,
+          sendEmail: false,
+          recipientEmail: undefined as any,
           metadata: item.metadata,
         });
       }
@@ -154,6 +182,52 @@ function App() {
 
     checkThresholds();
   }, [liveSensorData, settings, health, createAlert]);
+
+  useEffect(() => {
+    const handleSensorFault = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const { device, isFault } = customEvent.detail;
+      if (isFault) {
+        const sensorName = device === 'DHT22' ? 'Suhu & Kelembapan (DHT22)' : 'Kelembapan Tanah (Soil)';
+        createAlert(
+          'sensor_fault',
+          `⚠️ Sensor ${sensorName} tidak terdeteksi atau rusak! Periksa koneksi sensor.`,
+          'danger'
+        );
+      }
+    };
+    
+    window.addEventListener('nexagrow:sensor_fault', handleSensorFault);
+    return () => window.removeEventListener('nexagrow:sensor_fault', handleSensorFault);
+  }, [createAlert]);
+
+  // ============================================================
+  // AUTO-PUBLISH RAIN CHANCE KE ESP32 (setiap 3 jam)
+  // ============================================================
+  const lastRainPublishRef = useRef<number>(0);
+  const RAIN_PUBLISH_INTERVAL_MS = 3 * 60 * 60 * 1000; // 3 jam
+  const lastRainValueRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!weatherData?.current?.rain_chance) return;
+
+    const rainChance = weatherData.current.rain_chance;
+    const now = Date.now();
+    const lastPublish = lastRainPublishRef.current;
+    const lastValue = lastRainValueRef.current;
+
+    // Publish jika: pertama kali, nilai berubah, atau sudah 3 jam
+    const shouldPublish =
+      lastPublish === 0 ||
+      (rainChance !== lastValue) ||
+      (now - lastPublish >= RAIN_PUBLISH_INTERVAL_MS);
+
+    if (shouldPublish) {
+      lastRainPublishRef.current = now;
+      lastRainValueRef.current = rainChance;
+      publishRainChance(rainChance).catch(() => {});
+    }
+  }, [weatherData?.current?.rain_chance]);
 
   const mqttHistory = useMemo(() => getSensorHistorySnapshot(), [mqttStatus.lastMessageAt, mqttStatus.sensorSnapshot?.updatedAt]);
 
@@ -218,23 +292,30 @@ function App() {
     );
   }
 
+  const handlePageChange = (page: PageId) => {
+    setCurrentPage(page);
+  };
+
   return (
     <div className="min-h-screen text-slate-800">
       <div className="flex min-h-screen">
-        <Sidebar currentPage={currentPage} onPageChange={setCurrentPage} />
+        <Sidebar currentPage={currentPage} onPageChange={handlePageChange} />
 
         <div className="flex min-h-screen flex-1 flex-col">
-          <Header mqttStatus={mqttStatus} currentPage={currentPage} />
+          <Header mqttStatus={mqttStatus} currentPage={currentPage} health={health} />
 
           <main className="flex-1 overflow-auto px-4 py-4 sm:px-6 sm:py-6">
-            <motion.div
-              key={currentPage}
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.2 }}
-            >
-              {renderPage()}
-            </motion.div>
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={currentPage}
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -12 }}
+                transition={{ duration: 0.2 }}
+              >
+                {renderPage()}
+              </motion.div>
+            </AnimatePresence>
           </main>
         </div>
       </div>

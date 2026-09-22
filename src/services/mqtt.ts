@@ -25,10 +25,12 @@ const TOPIC_SETTINGS_STATUS = 'sproutai/settings/status';
 const TOPIC_SCHEDULE_CMD = 'sproutai/schedule/cmd';
 const TOPIC_SCHEDULE_STATUS = 'sproutai/schedule/status';
 const TOPIC_SENSOR_JSON = 'sproutai/sensor/data';
+const TOPIC_RAIN_CHANCE = 'sproutai/weather/rain_chance';
 const TOPIC_SOIL = 'sproutai/sensor/soil';
 const TOPIC_TEMP = 'sproutai/sensor/temp';
 const TOPIC_HUMIDITY = 'sproutai/sensor/humidity';
 const TOPIC_SCORE = 'sproutai/sensor/score';
+const TOPIC_SYSTEM_FAULT = 'sproutai/system/fault';
 
 const SUBSCRIBE_TOPICS = [
   DEVICE_STATUS_TOPIC,
@@ -45,11 +47,16 @@ const SUBSCRIBE_TOPICS = [
   TOPIC_SETTINGS_CMD,
   TOPIC_SETTINGS_STATUS,
   TOPIC_SCHEDULE_STATUS,
+  TOPIC_SYSTEM_FAULT,
 ];
 
-const ESP_ONLINE_TIMEOUT_MS = 15_000;
+const ESP_ONLINE_TIMEOUT_MS = 15_000; // 15 detik sebelum ESP32 dianggap offline
 const HISTORY_LIMIT = 120;
+const SENSOR_PERSIST_INTERVAL_MS = 30_000;
 const SETTINGS_EVENT = 'nexagrow:settings-updated';
+
+let lastPersistedSensorJson: string | null = null;
+let lastPersistedSensorAt = 0;
 
 export interface MqttSensorSnapshot {
   device_id: string | null;
@@ -82,6 +89,8 @@ export interface MqttSensorSnapshot {
   formula_vpd: string | null;
   formula_score: string | null;
   soil_raw_dry: number | null;
+  dht_error: boolean;
+  soil_error: boolean;
   updatedAt: string | null;
   sourceTopic: string | null;
 }
@@ -153,6 +162,8 @@ const emptySensorSnapshot: MqttSensorSnapshot = {
   formula_vpd: null,
   formula_score: null,
   soil_raw_dry: null,
+  dht_error: false,
+  soil_error: false,
   plant_phase: null,
   updatedAt: null,
   sourceTopic: null,
@@ -184,13 +195,33 @@ let sensorHistory: MqttSensorSnapshot[] = [];
 let reconnectTimer: number | null = null;
 
 function emit() {
-  const espOnline = snapshot.espOnline;
-  const systemOnline = snapshot.browserOnline && snapshot.mqttConnected && espOnline;
+  const now = Date.now();
+
+  const browserOnline = snapshot.browserOnline;
+  const mqttConnected = snapshot.mqttConnected;
+
+  const espLastSeenMs = snapshot.espLastSeenAt ? now - new Date(snapshot.espLastSeenAt).getTime() : null;
+  const espOnline = Boolean(
+    snapshot.espOnline &&
+    espLastSeenMs !== null &&
+    espLastSeenMs <= ESP_ONLINE_TIMEOUT_MS
+  );
+
+  // System online hanya jika web + mqtt + ESP32 aktif
+  const systemOnline = browserOnline && mqttConnected && espOnline;
+
   const reasonParts: string[] = [];
 
-  if (!snapshot.browserOnline) reasonParts.push('Web offline');
-  if (!snapshot.mqttConnected) reasonParts.push(snapshot.mqttError || 'MQTT belum terhubung');
-  if (!espOnline) reasonParts.push('ESP32 offline');
+  if (!browserOnline) reasonParts.push('Web offline');
+  if (!mqttConnected) reasonParts.push(snapshot.mqttError || 'MQTT belum terhubung');
+
+  if (!espOnline) {
+    if (espLastSeenMs === null) {
+      reasonParts.push('ESP32 status belum diterima');
+    } else {
+      reasonParts.push(`ESP32 offline • ${Math.floor(espLastSeenMs / 1000)} detik lalu`);
+    }
+  }
 
   snapshot = {
     ...snapshot,
@@ -198,7 +229,7 @@ function emit() {
     systemOnline,
     systemLabel: systemOnline ? 'Sistem Online' : 'Sistem Offline',
     systemDetail: systemOnline
-      ? 'Web, MQTT, dan ESP32 aktif'
+      ? 'Web & MQTT aktif' + (espOnline ? ', ESP32 aktif' : ', menunggu data sensor')
       : reasonParts.filter(Boolean).join(' • ') || 'Sistem belum siap',
     sensorSnapshot,
   };
@@ -241,11 +272,9 @@ function setSensorSnapshot(next: SensorDelta, sourceTopic: string, force = false
   if (!changed) {
     snapshot = {
       ...snapshot,
-      espOnline: true,
       lastTopic: sourceTopic,
       lastPayload: null,
       lastMessageAt: now,
-      espLastSeenAt: now,
     };
     emit();
     return;
@@ -255,11 +284,9 @@ function setSensorSnapshot(next: SensorDelta, sourceTopic: string, force = false
   pushHistory(merged);
   snapshot = {
     ...snapshot,
-    espOnline: true,
     lastTopic: sourceTopic,
     lastPayload: JSON.stringify(merged),
     lastMessageAt: now,
-    espLastSeenAt: now,
     sensorSnapshot,
   };
   emit();
@@ -285,6 +312,61 @@ export function parseMqttJsonPayload(payload: string): Record<string, unknown> |
   }
 }
 
+async function persistSensorDataToApi(payload: string, parsed: SensorDelta) {
+  if (typeof window === 'undefined') return;
+
+  const now = Date.now();
+  const normalized = JSON.stringify({
+    device_id: parsed.device_id ?? undefined,
+    temperature: parsed.temperature ?? undefined,
+    humidity: parsed.humidity ?? undefined,
+    soil_moisture: parsed.soil_moisture ?? undefined,
+    rain: parsed.rain ?? undefined,
+    score: parsed.score ?? undefined,
+    soil_score: parsed.soil_score ?? undefined,
+    vdp_score: parsed.vdp_score ?? undefined,
+    rain_score: parsed.rain_score ?? undefined,
+    vpd: parsed.vpd ?? undefined,
+    duration_estimate: parsed.duration_estimate ?? undefined,
+    pump_status: parsed.pump_status ?? undefined,
+    led_status: parsed.led_status ?? undefined,
+    device_mode: parsed.device_mode ?? undefined,
+    wifi_status: parsed.wifi_status ?? undefined,
+    threshold_kritis: parsed.threshold_kritis ?? undefined,
+    threshold_atas: parsed.threshold_atas ?? undefined,
+    threshold_bawah: parsed.threshold_bawah ?? undefined,
+    watering_time: parsed.watering_time ?? undefined,
+    watering_duration: parsed.watering_duration ?? undefined,
+    schedule_enabled: parsed.schedule_enabled ?? undefined,
+    formula_name: parsed.formula_name ?? undefined,
+    formula_soil: parsed.formula_soil ?? undefined,
+    formula_vpd: parsed.formula_vpd ?? undefined,
+    formula_score: parsed.formula_score ?? undefined,
+    soil_raw_dry: parsed.soil_raw_dry ?? undefined,
+    dht_error: parsed.dht_error ?? undefined,
+    soil_error: parsed.soil_error ?? undefined,
+  });
+
+  if (lastPersistedSensorJson === normalized && now - lastPersistedSensorAt < SENSOR_PERSIST_INTERVAL_MS) {
+    return;
+  }
+
+  lastPersistedSensorJson = normalized;
+  lastPersistedSensorAt = now;
+
+  try {
+    await fetch('/api/sensor', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: normalized,
+    });
+  } catch (err) {
+    console.warn('[SENSOR PERSIST] Gagal simpan ke API sensor:', err);
+  }
+}
+
 function consumePendingMqttAcks(topic: string, payload: string) {
   for (const waiter of Array.from(pendingMqttAcks)) {
     try {
@@ -300,6 +382,7 @@ function consumePendingMqttAcks(topic: string, payload: string) {
 }
 
 function applySettingsSnapshot(detail: Record<string, unknown>, sourceTopic: string) {
+  // Update sensor snapshot for the fields used by dashboard/control (thresholds + schedule).
   const nextSensorDelta: SensorDelta = {
     threshold_kritis: parseNumeric(detail.threshold_kritis ?? detail.soil_threshold_critical),
     threshold_atas: parseNumeric(detail.threshold_atas ?? detail.soil_threshold_high),
@@ -309,21 +392,74 @@ function applySettingsSnapshot(detail: Record<string, unknown>, sourceTopic: str
     schedule_enabled: detail.watering_enabled === undefined
       ? (detail.schedule_enabled === undefined ? undefined : parseBoolean(detail.schedule_enabled))
       : Boolean(detail.watering_enabled),
+
+    // Extra fields are dispatched via dispatchSettingsEvent (useSettings),
+    // not stored in MqttSensorSnapshot because the type doesn't include them.
   };
+
 
   setSensorSnapshot(nextSensorDelta, sourceTopic, true);
 
+  // IMPORTANT: dispatch full settings payload so every page re-renders with latest values.
+  // Payload shape should match what useSettings.normalizeSettings expects.
   const settingsDetail = {
     ...(detail as Record<string, unknown>),
-    watering_time: typeof detail.watering_time === 'string' ? detail.watering_time : undefined,
+
+    // Normalize keys to common web settings keys
+    plant_phase:
+      typeof detail.plant_phase === 'string'
+        ? detail.plant_phase
+        : typeof detail.crop_mode === 'string'
+          ? detail.crop_mode
+          : undefined,
+
+    location:
+      typeof detail.location === 'string'
+        ? detail.location
+        : typeof detail.weather_location === 'string'
+          ? detail.weather_location
+          : undefined,
+
+    watering_time:
+      typeof detail.watering_time === 'string' ? detail.watering_time : undefined,
+
     watering_duration: parseNumeric(detail.watering_duration),
-    watering_enabled: detail.watering_enabled === undefined
-      ? (detail.schedule_enabled === undefined ? undefined : parseBoolean(detail.schedule_enabled))
-      : Boolean(detail.watering_enabled),
+
+    watering_enabled:
+      detail.watering_enabled === undefined
+        ? detail.schedule_enabled === undefined
+          ? undefined
+          : parseBoolean(detail.schedule_enabled)
+        : Boolean(detail.watering_enabled),
+
+    // thresholds: support both ESP32 web payload keys and sensor-derived keys
+    temp_threshold_low: parseNumeric(detail.temp_threshold_low ?? detail.threshold_bawah),
+    temp_threshold_high: parseNumeric(detail.temp_threshold_high ?? detail.threshold_atas),
+    humidity_threshold_low: parseNumeric(detail.humidity_threshold_low ?? detail.h_low ?? detail.humidity_low),
+    humidity_threshold_high: parseNumeric(detail.humidity_threshold_high ?? detail.h_high ?? detail.humidity_high),
+    soil_threshold_low: parseNumeric(detail.soil_threshold_low ?? detail.threshold_bawah),
+    soil_threshold_high: parseNumeric(detail.soil_threshold_high ?? detail.threshold_atas),
+    soil_threshold_critical: parseNumeric(detail.soil_threshold_critical ?? detail.threshold_kritis),
+
+    auto_report:
+      detail.auto_report === undefined ? undefined : Boolean(detail.auto_report),
+    report_time:
+      typeof detail.report_time === 'string' ? detail.report_time : undefined,
+
+    // user_name & user_email dihapus
+    user_name: undefined,
+    user_email: undefined,
+
+    // keep compatibility with some pages that use crop_mode
+    crop_mode:
+      typeof detail.crop_mode === 'string'
+        ? detail.crop_mode
+        : undefined,
   } as Record<string, unknown>;
 
   dispatchSettingsEvent(settingsDetail);
 }
+
 
 function parseNumeric(value: unknown): number | null {
   if (typeof value === 'number') return Number.isFinite(value) ? value : null;
@@ -389,6 +525,8 @@ function normalizeJsonSensorPayload(payload: string): SensorDelta | null {
       formula_vpd: typeof obj.formula_vpd === 'string' ? obj.formula_vpd : undefined,
       formula_score: typeof obj.formula_score === 'string' ? obj.formula_score : undefined,
       soil_raw_dry: parseNumeric(obj.soil_raw_dry),
+      dht_error: parseBoolean(obj.dht_error) ?? false,
+      soil_error: parseBoolean(obj.soil_error) ?? false,
     };
   } catch {
     return null;
@@ -425,12 +563,26 @@ function updateFromTopic(topic: string, payload: string) {
   const now = new Date().toISOString();
   const trimmed = payload.trim();
 
-  if (topic === SYSTEM_STATUS_TOPIC || topic === DEVICE_STATUS_TOPIC) {
+  if (topic === DEVICE_STATUS_TOPIC) {
     const parsedStatus = parseStatusValue(trimmed);
     const isOnline = parsedStatus ?? true;
+    
+    if (!isOnline && sensorSnapshot) {
+      sensorSnapshot = { ...sensorSnapshot, pump_status: false, led_status: false };
+    }
+    
     setSnapshot({
       espOnline: isOnline,
-      espLastSeenAt: isOnline ? now : null,
+      espLastSeenAt: now,
+      lastTopic: topic,
+      lastPayload: payload,
+      lastMessageAt: now,
+    });
+    return;
+  }
+
+  if (topic === SYSTEM_STATUS_TOPIC) {
+    setSnapshot({
       lastTopic: topic,
       lastPayload: payload,
       lastMessageAt: now,
@@ -447,6 +599,7 @@ function updateFromTopic(topic: string, payload: string) {
         lastPayload: payload,
         lastMessageAt: now,
       });
+      persistSensorDataToApi(payload, parsed).catch(() => {});
     }
     return;
   }
@@ -496,6 +649,25 @@ function updateFromTopic(topic: string, payload: string) {
       }, topic);
       dispatchSettingsEvent(normalizedSchedule);
     }
+  } else if (topic === TOPIC_SYSTEM_FAULT) {
+    const parsed = parseMqttJsonPayload(trimmed);
+    if (parsed) {
+      const device = parsed.device as string;
+      const status = parsed.status as string;
+      const isFault = status === 'fault';
+      
+      if (device === 'DHT22') {
+        setSensorSnapshot({ dht_error: isFault }, topic);
+      } else if (device === 'SOIL') {
+        setSensorSnapshot({ soil_error: isFault }, topic);
+      }
+      
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('nexagrow:sensor_fault', {
+          detail: { device, status, isFault }
+        }));
+      }
+    }
   }
 
   if (
@@ -506,13 +678,13 @@ function updateFromTopic(topic: string, payload: string) {
     topic.startsWith('sproutai/wifi/') ||
     topic.startsWith('sproutai/settings/') ||
     topic.startsWith('sproutai/schedule/') ||
-    topic.startsWith('sproutai/esp32/')
+    topic.startsWith('sproutai/esp32/') ||
+    topic.startsWith('sproutai/system/')
   ) {
     setSnapshot({
       lastTopic: topic,
       lastPayload: payload,
       lastMessageAt: now,
-      espLastSeenAt: now,
     });
   }
 }
@@ -847,6 +1019,38 @@ function applyLocalSnapshot(action: string, duration?: number, data?: Record<str
 
 export function syncLocalControlState(action: string, duration?: number, data?: Record<string, any>) {
   applyLocalSnapshot(action, duration, data);
+}
+
+/**
+ * Publish rain chance data to MQTT for ESP32 consumption.
+ * This is called automatically every 3 hours (or when value changes)
+ * from App.tsx so it works without opening Settings page.
+ */
+export function publishRainChance(rainChance: number) {
+  const currentClient = connectOnce();
+  if (!currentClient) return Promise.resolve(false);
+
+  const payload = JSON.stringify({
+    rainChance: Math.round(rainChance),
+    timestamp: new Date().toISOString(),
+  });
+
+  return new Promise<boolean>((resolve) => {
+    currentClient.publish(
+      TOPIC_RAIN_CHANCE,
+      payload,
+      { retain: true, qos: 1 },
+      (err?: Error | null) => {
+        if (err) {
+          console.warn('[RAIN] publish rainChance failed', err.message);
+          resolve(false);
+          return;
+        }
+        console.debug('[RAIN] published rainChance', rainChance, '%');
+        resolve(true);
+      },
+    );
+  });
 }
 
 export function announceWebPresence(status: 'online' | 'offline' = 'online') {

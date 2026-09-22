@@ -21,7 +21,10 @@ type BmkgResponse = {
   lokasi?: BmkgLocation;
   data?: Array<{
     cuaca?: BmkgForecast[][];
+    forecast?: BmkgForecast[][];
   }>;
+  cuaca?: BmkgForecast[][];
+  forecast?: BmkgForecast[][];
 };
 
 const DEFAULT_WEATHER: WeatherData = {
@@ -42,10 +45,11 @@ function toNumber(value: number | string | undefined, fallback: number) {
 }
 
 function getRainChance(weatherCode: number | string | undefined) {
-  const normalized = String(weatherCode ?? '').trim();
-  if (normalized === '0') return 0;
-  if (['1', '2', '3'].includes(normalized)) return 10;
-  if (['4', '5', '6', '7'].includes(normalized)) return 35;
+  const normalized = String(weatherCode ?? '').trim().toLowerCase();
+  if (normalized === '0' || normalized === 'nol') return 0;
+  if (['1', '2', '3', 'ringan', 'cerah'].includes(normalized)) return 10;
+  if (['4', '5', '6', '7', 'berawan', 'hujan ringan'].includes(normalized)) return 35;
+  if (normalized.includes('hujan')) return 70;
   return 60;
 }
 
@@ -60,19 +64,39 @@ function formatLocation(location?: BmkgLocation, fallbackLocation = DEFAULT_WEAT
   return parts.length > 0 ? parts.join(', ') : fallbackLocation;
 }
 
-export function transformBmkgWeather(data: BmkgResponse, fallbackLocation = DEFAULT_WEATHER.location): WeatherData {
-  const forecasts = data.data?.[0]?.cuaca?.flat() ?? [];
+function extractForecastRows(data: BmkgResponse | BmkgResponse[]) {
+  const root = Array.isArray(data) ? data[0] : data;
+  const candidates = [
+    root?.data?.[0]?.cuaca,
+    root?.data?.[0]?.forecast,
+    root?.cuaca,
+    root?.forecast,
+  ].filter(Boolean);
+
+  const flattened = candidates.flatMap((entry) => {
+    if (Array.isArray(entry)) {
+      return entry.flatMap((item) => (Array.isArray(item) ? item : [item]));
+    }
+    return [];
+  });
+
+  return flattened.filter((item): item is NonNullable<BmkgForecast> => Boolean(item && typeof item === 'object'));
+}
+
+export function transformBmkgWeather(data: BmkgResponse | BmkgResponse[], fallbackLocation = DEFAULT_WEATHER.location): WeatherData {
+  const root = Array.isArray(data) ? data[0] : data;
+  const forecasts = extractForecastRows(data);
   const [currentForecast, ...nextForecasts] = forecasts;
 
   if (!currentForecast) {
     return {
       ...DEFAULT_WEATHER,
-      location: formatLocation(data.lokasi, fallbackLocation),
+      location: formatLocation(root?.lokasi, fallbackLocation),
     };
   }
 
   return {
-    location: formatLocation(data.lokasi, fallbackLocation),
+    location: formatLocation(root?.lokasi, fallbackLocation),
     current: {
       temperature: toNumber(currentForecast.t, DEFAULT_WEATHER.current.temperature),
       humidity: toNumber(currentForecast.hu, DEFAULT_WEATHER.current.humidity),

@@ -90,13 +90,13 @@ export function AboutPage() {
 
           <div>
             <h4 className="text-sm font-bold uppercase tracking-wider text-gray-500">Pembimbing</h4>
-            <p className="mt-1 text-sm font-medium text-gray-800">Rifqi Setyawan S.Pd</p>
+            <p className="mt-1 text-sm font-medium text-gray-800">Rifqi Setiawan S.Pd</p>
           </div>
 
           <div>
             <h4 className="text-sm font-bold uppercase tracking-wider text-gray-500">Anggota Tim</h4>
             <ul className="mt-2 space-y-1.5 text-sm font-medium text-gray-800">
-              <li>• Habibullah Naja Alfatih Wibowo (Ketua Tim)</li>
+              <li>• Habibullah Naja Alfatih Wibowo</li>
               <li>• Raihan Andrean Maulana</li>
               <li>• Ilham Hendro Saputro</li>
             </ul>

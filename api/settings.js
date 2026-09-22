@@ -65,7 +65,13 @@ function phaseDefaults(phase) {
 }
 
 function normalizeSettings(input = {}) {
-  const obj = { ...DEFAULT_SETTINGS, ...(input || {}) };
+  const obj = { ...DEFAULT_SETTINGS };
+  for (const [key, value] of Object.entries(input || {})) {
+    if (value !== null && value !== undefined) {
+      obj[key] = value;
+    }
+  }
+
   const phase = normalizePhase(obj.plant_phase || obj.crop_mode);
   const defaults = phaseDefaults(phase);
   const soilLow = clampNumber(obj.soil_threshold_low ?? obj.soil_moisture_threshold ?? defaults.soil_threshold_low, 0, 100, defaults.soil_threshold_low);
@@ -104,6 +110,37 @@ function normalizeSettings(input = {}) {
   };
 }
 
+const SETTINGS_DB_COLUMNS = new Set([
+  'id',
+  'plant_phase',
+  'crop_mode',
+  'location',
+  'temp_threshold_high',
+  'temp_threshold_low',
+  'soil_threshold_low',
+  'soil_threshold_high',
+  'soil_threshold_critical',
+  'humidity_threshold_low',
+  'humidity_threshold_high',
+  'ph_min',
+  'ph_max',
+  'auto_report',
+  'report_time',
+  'watering_time',
+  'watering_duration',
+  'watering_enabled',
+  'user_name',
+  'user_email',
+  'updated_at',
+  'soil_moisture_threshold',
+]);
+
+function filterSettingsForDatabase(input = {}) {
+  return Object.fromEntries(
+    Object.entries(input).filter(([key]) => SETTINGS_DB_COLUMNS.has(key)),
+  );
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, OPTIONS');
@@ -123,13 +160,13 @@ export default async function handler(req, res) {
       if (error) {
         if (error.code === 'PGRST116') {
           // No rows found, safe to return default
-          return res.status(200).json(DEFAULT_SETTINGS);
+          return res.status(200).json(normalizeSettings(DEFAULT_SETTINGS));
         }
         // Any other error (connection, etc) should fail so frontend uses localStorage
         return res.status(500).json({ error: error.message });
       }
 
-      return res.status(200).json(data || DEFAULT_SETTINGS);
+      return res.status(200).json(normalizeSettings(data || DEFAULT_SETTINGS));
     }
 
     if (req.method === 'PUT' || req.method === 'POST') {
@@ -137,12 +174,16 @@ export default async function handler(req, res) {
 
       const updates = req.body || {};
       const payload = normalizeSettings(updates);
+      const dbPayload = filterSettingsForDatabase(payload);
 
-      if (!supabase) return res.status(503).json({ error: 'Database not configured' });
+      if (!supabase) {
+        console.warn('[api/settings] Supabase not configured; returning normalized payload locally');
+        return res.status(200).json(payload);
+      }
 
       const { data, error } = await supabase
         .from('settings')
-        .upsert(payload)
+        .upsert(dbPayload)
         .select()
         .single();
 
@@ -154,7 +195,7 @@ export default async function handler(req, res) {
         details: updates,
       }).catch(() => {});
 
-      return res.status(200).json(data);
+      return res.status(200).json(normalizeSettings(data || payload));
     }
 
     res.status(405).json({ error: 'Method not allowed' });

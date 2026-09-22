@@ -64,6 +64,7 @@ export interface SensorSnapshotContext {
   weather_temperature?: number | null;
   weather_rain_chance?: number | null;
   weather_forecast_location?: string | null;
+  weather_forecast?: string | null;
 }
 
 interface SensorSnapshotApi {
@@ -109,6 +110,7 @@ interface SensorSnapshotApi {
   weather_temperature?: number | string | null;
   weather_rain_chance?: number | string | null;
   weather_forecast_location?: string | null;
+  weather_forecast?: string | null;
 }
 
 interface SensorSnapshotResponse {
@@ -229,6 +231,7 @@ function normalizeSensorContext(input: unknown): Partial<SensorSnapshotContext> 
     weather_temperature: typeof sensor.weather_temperature === 'number' ? sensor.weather_temperature : null,
     weather_rain_chance: typeof sensor.weather_rain_chance === 'number' ? sensor.weather_rain_chance : null,
     weather_forecast_location: typeof sensor.weather_forecast_location === 'string' ? sensor.weather_forecast_location : null,
+    weather_forecast: typeof sensor.weather_forecast === 'string' ? sensor.weather_forecast : null,
   };
 }
 

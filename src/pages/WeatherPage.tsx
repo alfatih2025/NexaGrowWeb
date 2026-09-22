@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { CloudSun, ChevronDown, Save, MapPin, Navigation2 } from 'lucide-react';
 import { WeatherMotionForecast } from '../components/WeatherMotionForecast';
@@ -15,6 +15,7 @@ import {
   getWeatherLocationProvinces,
   getWeatherLocationVillages,
   getWeatherLocationsByCategory,
+  normalizeWeatherLocationCode,
   resolveWeatherLocationPath,
 } from '../lib/weatherLocations';
 import type { WeatherLocationCategory } from '../types/weather';
@@ -74,7 +75,8 @@ function persistStoredSelection(code: string) {
 }
 
 function resolveSelectionFromCode(code: string): WeatherSelection {
-  const location = getWeatherLocationByCode(code) ?? getWeatherLocationByCode(DEFAULT_WEATHER_LOCATION_CODE);
+  const normalizedCode = normalizeWeatherLocationCode(code);
+  const location = getWeatherLocationByCode(normalizedCode) ?? getWeatherLocationByCode(DEFAULT_WEATHER_LOCATION_CODE);
 
   if (!location) {
     return {
@@ -91,7 +93,7 @@ function resolveSelectionFromCode(code: string): WeatherSelection {
     province: location.province,
     city: location.city,
     district: location.district || (location.level === 'district' ? location.label : ''),
-    locationCode: location.code,
+    locationCode: location.code || normalizedCode,
   };
 }
 
@@ -122,23 +124,37 @@ function resolveSelection(next: Partial<WeatherSelection>, previous: WeatherSele
   if (nextVillages.length > 0) {
     locationCode = nextVillages.some((item) => item.code === locationCode) ? locationCode : nextVillages[0].code;
   } else {
-    locationCode = pickFirstLocationCode(category, province, city, district);
+    const defaultDistrictCode = pickFirstLocationCode(category, province, city, district);
+    const districtPrefix = defaultDistrictCode.split('.').slice(0, 3).join('.');
+    const requestedPrefix = locationCode.split('.').slice(0, 3).join('.');
+    locationCode = districtPrefix === requestedPrefix ? locationCode : defaultDistrictCode;
   }
 
   return { category, province, city, district, locationCode };
 }
 
 export function WeatherPage({ locationCode, settings, updateSettings }: WeatherPageProps) {
-  const initialCode = locationCode || settings?.location || readStoredSelection() || DEFAULT_WEATHER_LOCATION_CODE;
+    const initialCode = normalizeWeatherLocationCode(locationCode || settings?.location || readStoredSelection() || DEFAULT_WEATHER_LOCATION_CODE);
   const [selection, setSelection] = useState<WeatherSelection>(resolveSelectionFromCode(initialCode));
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [bmkgVillages, setBmkgVillages] = useState<BmkgVillageLocation[]>([]);
   const [loadingVillages, setLoadingVillages] = useState(false);
   const [villagesError, setVillagesError] = useState<string | null>(null);
 
+  const lastSyncedRemoteLocation = useRef<string | null>(null);
+
   useEffect(() => {
-    const nextCode = settings?.location || locationCode || readStoredSelection() || DEFAULT_WEATHER_LOCATION_CODE;
-    setSelection(resolveSelectionFromCode(nextCode));
+    const nextRemote = normalizeWeatherLocationCode(settings?.location || locationCode || '');
+    if (nextRemote && nextRemote !== lastSyncedRemoteLocation.current) {
+      console.log(`[WeatherPage] Syncing location from ${lastSyncedRemoteLocation.current} to ${nextRemote}`);
+      lastSyncedRemoteLocation.current = nextRemote;
+      setSelection(resolveSelectionFromCode(nextRemote));
+    } else if (!nextRemote && lastSyncedRemoteLocation.current !== DEFAULT_WEATHER_LOCATION_CODE) {
+      // Reset to default if no location provided
+      lastSyncedRemoteLocation.current = DEFAULT_WEATHER_LOCATION_CODE;
+      setSelection(resolveSelectionFromCode(DEFAULT_WEATHER_LOCATION_CODE));
+    }
   }, [locationCode, settings?.location]);
 
   useEffect(() => {
@@ -154,65 +170,35 @@ export function WeatherPage({ locationCode, settings, updateSettings }: WeatherP
   );
 
   useEffect(() => {
-    let active = true;
-
     if (selection.category !== 'semarang' || !selection.district) {
       setBmkgVillages([]);
       setVillagesError(null);
       setLoadingVillages(false);
-      return () => {
-        active = false;
-      };
+      return;
     }
-
-    const districtItem = getWeatherLocationItemByPath('semarang', 'Jawa Tengah', 'Kota Semarang', selection.district);
-    const districtCode = districtItem?.code;
-
-    if (!districtCode) {
-      setBmkgVillages([]);
-      setVillagesError(null);
-      setLoadingVillages(false);
-      return () => {
-        active = false;
-      };
-    }
-
-    setLoadingVillages(true);
+    
+    // Scrape is disabled as BMKG structure changed. Using local options.
+    setBmkgVillages([]);
     setVillagesError(null);
-
-    fetch(`/api/weather-locations?district=${encodeURIComponent(districtCode)}`)
-      .then(async (response) => {
-        if (!response.ok) throw new Error('Gagal memuat daftar kelurahan dari BMKG.');
-        return response.json();
-      })
-      .then((payload) => {
-        if (!active) return;
-        const items = Array.isArray(payload?.items) ? payload.items : [];
-        const villages = items.filter((item: BmkgVillageLocation) => item?.level === 'village');
-        setBmkgVillages(villages);
-        setVillagesError(villages.length > 0 ? null : 'BMKG tidak mengembalikan daftar kelurahan. Menggunakan data cadangan lokal.');
-      })
-      .catch((err) => {
-        if (!active) return;
-        setBmkgVillages([]);
-        setVillagesError(err instanceof Error ? err.message : 'Gagal memuat daftar kelurahan BMKG.');
-      })
-      .finally(() => {
-        if (active) setLoadingVillages(false);
-      });
-
-    return () => {
-      active = false;
-    };
+    setLoadingVillages(false);
   }, [selection.category, selection.district]);
 
   useEffect(() => {
     if (selection.category !== 'semarang') return;
     const options = bmkgVillages.length > 0 ? bmkgVillages : localVillageOptions;
     if (options.length === 0) return;
+    // Already in the list — nothing to do
     if (options.some((item) => item.code === selection.locationCode)) return;
+    // If the current code belongs to the same district (same prefix up to
+    // the kecamatan segment, e.g. "33.74.07"), keep the user's explicit
+    // choice even when BMKG uses a different village code for the same area.
+    const currentPrefix = selection.locationCode.split('.').slice(0, 3).join('.');
+    const districtItem = getWeatherLocationItemByPath(selection.category, selection.province, selection.city, selection.district);
+    const expectedPrefix = districtItem?.code?.split('.').slice(0, 3).join('.') || currentPrefix;
+    if (currentPrefix === expectedPrefix) return;
+    // Code is from a different district entirely — snap to the first option
     setSelection((prev) => ({ ...prev, locationCode: options[0].code }));
-  }, [bmkgVillages, localVillageOptions, selection.category, selection.locationCode]);
+  }, [bmkgVillages, localVillageOptions, selection.category, selection.locationCode, selection.province, selection.city, selection.district]);
 
   const weatherCode = selection.locationCode;
   const { data, loading, error } = useWeather(weatherCode);
@@ -264,10 +250,25 @@ export function WeatherPage({ locationCode, settings, updateSettings }: WeatherP
   const handleSave = async () => {
     if (!updateSettings) return;
     setSaveState('saving');
+    setSaveError(null);
     try {
-      const normalized = await updateSettings({ location: weatherCode });
+      const payload: Partial<Settings> = { location: weatherCode };
+      const normalized = await updateSettings(payload);
       persistStoredSelection(normalized.location);
       setSelection((prev) => ({ ...prev, locationCode: normalized.location }));
+
+      const weatherForecastSummary = data?.forecast?.length
+        ? data.forecast
+            .slice(0, 5)
+            .map((item) => {
+              const date = new Date(item.datetime);
+              const formatted = Number.isFinite(date.getTime())
+                ? date.toLocaleString('id-ID', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+                : String(item.datetime);
+              return `${formatted}: ${item.weather}, ${item.temperature}°C, peluang hujan ${item.rain_chance}%`;
+            })
+            .join(' | ')
+        : null;
 
       await sendCommand('settings_sync', undefined, {
         plant_phase: normalized.plant_phase,
@@ -276,6 +277,7 @@ export function WeatherPage({ locationCode, settings, updateSettings }: WeatherP
         weather_condition: data?.current.weather,
         weather_rain_chance: data?.current.rain_chance,
         weather_temperature: data?.current.temperature,
+        weather_forecast: weatherForecastSummary,
         temp_threshold_low: normalized.temp_threshold_low,
         temp_threshold_high: normalized.temp_threshold_high,
         humidity_threshold_low: normalized.humidity_threshold_low,
@@ -307,7 +309,8 @@ export function WeatherPage({ locationCode, settings, updateSettings }: WeatherP
       });
       setSaveState('saved');
       setTimeout(() => setSaveState('idle'), 2000);
-    } catch {
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Gagal menyimpan lokasi cuaca');
       setSaveState('idle');
     }
   };
@@ -331,8 +334,10 @@ export function WeatherPage({ locationCode, settings, updateSettings }: WeatherP
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.05fr_0.95fr]">
         <motion.div
+          key={selection.locationCode}
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.25 }}
           className="space-y-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm sm:p-6"
         >
           <MapPin className="h-5 w-5 text-emerald-600" />
@@ -359,26 +364,6 @@ export function WeatherPage({ locationCode, settings, updateSettings }: WeatherP
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
-            <div>
-              <label className="mb-2 block text-sm font-medium text-gray-700">Provinsi</label>
-
-              <div className="relative">
-
-                <select
-                  value={selection.province}
-                  onChange={(e) => handleProvinceChange(e.target.value)}
-                  className="w-full appearance-none rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 pr-10 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-                >
-                  {provinceOptions.map((item) => (
-                    <option key={item} value={item}>
-                      {item}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-              </div>
-            </div>
-
             <div>
               <label className="mb-2 block text-sm font-medium text-gray-700">Kota / Kabupaten</label>
               <div className="relative">
@@ -415,7 +400,7 @@ export function WeatherPage({ locationCode, settings, updateSettings }: WeatherP
               </div>
             </div>
 
-            <div>
+            <div className="md:col-span-2">
               <label className="mb-2 block text-sm font-medium text-gray-700">Kelurahan / Desa</label>
               <div className="relative">
                 <select
@@ -460,13 +445,22 @@ export function WeatherPage({ locationCode, settings, updateSettings }: WeatherP
               {saveState === 'saving' ? 'Menyimpan...' : 'Simpan Lokasi'}
             </button>
           </div>
+          {saveError ? (
+            <div className="rounded-xl bg-rose-50 p-3 text-sm text-rose-700">{saveError}</div>
+          ) : null}
 
         </motion.div>
 
         <div className="space-y-6">
           <WeatherMotionForecast data={data} loading={loading} error={error} locationLabel={selectedLabel} />
 
-          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
+          <motion.div
+            key={`summary-${selection.locationCode}`}
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.2 }}
+            className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm"
+          >
             <div className="mb-4 flex items-center gap-3">
               <Navigation2 className="h-5 w-5 text-emerald-600" />
               <h3 className="text-lg font-semibold text-gray-800">Ringkasan lokasi</h3>
@@ -477,7 +471,13 @@ export function WeatherPage({ locationCode, settings, updateSettings }: WeatherP
             </div>
           </motion.div>
 
-          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
+          <motion.div
+            key={`info-${selection.locationCode}`}
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.2 }}
+            className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm"
+          >
             <h3 className="mb-4 text-lg font-semibold text-gray-800">Informasi Cuaca</h3>
             <div className="grid grid-cols-1 gap-4 text-sm md:grid-cols-2">
               <div className="rounded-xl bg-emerald-50 p-4">
