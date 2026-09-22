@@ -21,6 +21,7 @@ function normalizeRow(row) {
 
   return {
     id: row.id ?? undefined,
+    node_id: row.node_id ?? 'NODE_01',
     device_id: row.device_id ?? 'ESP32_001',
     temperature: toNumber(row.temperature, 0),
     humidity: toNumber(row.humidity, 0),
@@ -104,6 +105,7 @@ export default async function handler(req, res) {
     if (req.method === 'POST') {
       const body = req.body || {};
       const payload = {
+        node_id: body.node_id || 'NODE_01',
         device_id: body.device_id || 'ESP32_001',
         temperature: toNumber(body.temperature, 0),
         humidity: toNumber(body.humidity, 0),
